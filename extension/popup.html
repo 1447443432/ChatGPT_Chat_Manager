@@ -1,0 +1,8 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>聊天白名单</title><link rel="stylesheet" href="style.css"></head><body>
+<header><strong>ChatGPT 聊天白名单助手</strong><small>本地运行 · 尝试识别项目聊天并保护</small></header>
+<div class="actions"><button id="scan">扫描当前列表</button><button id="frame" class="primary">在页面拖动框选保留</button></div>
+<label for="keywords">关键词保留（每行一个，也支持逗号分隔）</label><textarea id="keywords" rows="3" placeholder="MongoDB&#10;Kafka&#10;Kubernetes"></textarea><button id="saveWords">保存关键词</button>
+<section id="stats">请先扫描当前页面</section><div class="warn">注意：扫描结果只覆盖当前页面已加载的聊天。未加载、已归档或其他工作区的聊天不在候选中。当前版本不提供自动永久删除。</div>
+<div class="actions"><button id="export">导出清单 CSV</button><button id="reset">清空手动白名单</button></div>
+<div class="tablehead">已扫描聊天 <span id="count"></span></div><div id="list"></div>
+<div id="status" role="status"></div><script src="popup.js"></script></body></html>

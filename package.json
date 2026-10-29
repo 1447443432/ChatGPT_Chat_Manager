@@ -1,0 +1,7 @@
+{
+  "name": "chatgpt-chat-manager",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Edge MV3 ChatGPT chat whitelist helper (preview only)",
+  "scripts": { "test": "node tests/validate.mjs" }
+}

@@ -92,8 +92,8 @@ $('save').addEventListener('click',async()=>{
 });
 $('saveDelete').addEventListener('click',()=>{
   const found=selectedChats();if(!found.length)return;
-  const added=window.addDeleteSelections?.(found)||0;
-  status(added?`已将 ${added} 条聊天加入待删除。手动白名单中的聊天需要先移出保护清单。`:'未加入待删除：请先重新获取，并检查所选聊天是否已在手动白名单中。');
-  if(added){$('deleteMode').value='selected';$('deleteMode').dispatchEvent(new Event('change'));document.querySelector('.tab[data-panel="deletePanel"]').click();}
+  const result=window.addDeleteSelections?.(found)||{added:0,already:0,protected:0,stale:found.length};
+  status([result.added&&`新加入 ${result.added} 条`,result.already&&`${result.already} 条已在待删除名单`,result.protected&&`${result.protected} 条在手动白名单中未加入`,result.stale&&`${result.stale} 条已不在当前扫描中`].filter(Boolean).join('；')||'没有加入待删除名单。');
+  if(result.added||result.already){$('deleteMode').value='selected';$('deleteMode').dispatchEvent(new Event('change'));document.querySelector('.tab[data-panel="deletePanel"]').click();}
 });
 })();

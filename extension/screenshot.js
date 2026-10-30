@@ -15,7 +15,7 @@ async function load(file) {
   if (!file?.type.startsWith('image/')) { status('请选择图片文件'); return; }
   if($('screenshotPanel').hidden)$('screenshot').click();
   const url=URL.createObjectURL(file);
-  try { const img=new Image();img.src=url;await img.decode();image=img;canvas.width=img.naturalWidth;canvas.height=img.naturalHeight;selection=null;draw();canvas.hidden=false;$('recognize').disabled=false;$('results').replaceChildren();$('save').hidden=true;status('图片已加载，可拖动框选区域；不框选则识别整张图片。'); }
+  try { const img=new Image();img.src=url;await img.decode();image=img;canvas.width=img.naturalWidth;canvas.height=img.naturalHeight;selection=null;draw();canvas.hidden=false;$('recognize').disabled=false;$('results').replaceChildren();$('save').hidden=true;$('saveDelete').hidden=true;status('图片已加载，可拖动框选区域；不框选则识别整张图片。'); }
   catch { status('无法读取这张图片'); }
   finally { URL.revokeObjectURL(url); }
 }
@@ -42,7 +42,7 @@ function show(lines) {
     if(candidates.length===1){select.value=candidates[0].id;matched++;}
     row.append(label,select);root.append(row);
   }
-  $('save').hidden=!root.children.length;
+  $('save').hidden=!root.children.length;$('saveDelete').hidden=!root.children.length;
   status(`识别到 ${root.children.length} 行；自动匹配 ${matched} 行。请逐项核对，未匹配的可手动选择聊天。`);
 }
 $('recognize').addEventListener('click',async()=>{
@@ -62,14 +62,24 @@ $('recognize').addEventListener('click',async()=>{
   } catch(error) {status(`识别失败：${error.message}`);}
   finally {if(worker)await worker.terminate();$('recognize').disabled=false;}
 });
-$('save').addEventListener('click',async()=>{
+function selectedChats(){
   const ids=[...$('results').querySelectorAll('select')].map(s=>s.value).filter(Boolean);
-  if(!ids.length){status('请先选择要加入白名单的聊天');return;}
+  if(!ids.length){status('请先选择截图对应的聊天');return [];}
   const latest=window.getCurrentScannedChats?.()||[];
   const found=[...new Set(ids)].map(id=>latest.find(c=>c.id===id&&c.title===chats.find(old=>old.id===id)?.title)).filter(Boolean);
-  if(!found.length){status('选择的聊天已不在本次扫描结果中，或标题已变化。请重新获取并核对。');return;}
+  if(!found.length)status('选择的聊天已不在本次扫描结果中，或标题已变化。请重新获取并核对。');
+  return found;
+}
+$('save').addEventListener('click',async()=>{
+  const found=selectedChats();if(!found.length)return;
   const data=await chrome.storage.local.get(['whitelist']);const whitelist=data.whitelist||{};
   for(const chat of found)whitelist[chat.id]={title:chat.title,url:chat.url,createdAt:new Date().toISOString()};
-  await chrome.storage.local.set({whitelist});status(`已核对并将 ${found.length} 条聊天加入白名单。${found.length<new Set(ids).size?'其余条目不在当前扫描结果中，已跳过。':''}`);
+  await chrome.storage.local.set({whitelist});status(`已核对并将 ${found.length} 条聊天加入手动白名单。`);
+});
+$('saveDelete').addEventListener('click',()=>{
+  const found=selectedChats();if(!found.length)return;
+  const added=window.addDeleteSelections?.(found)||0;
+  status(added?`已将 ${added} 条聊天加入待删除。手动白名单中的聊天需要先移出保护清单。`:'未加入待删除：请先重新获取，并检查所选聊天是否已在手动白名单中。');
+  if(added){$('deleteMode').value='selected';$('deleteMode').dispatchEvent(new Event('change'));document.querySelector('.tab[data-panel="chatsPanel"]').click();$('deleteArea').open=true;}
 });
 })();

@@ -111,8 +111,9 @@
   const visible=el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0;};
   const exactText=(el,values)=>values.includes(normTitle(el.textContent||el.getAttribute('aria-label')));
   const nativeClick=el=>{for(const type of ['pointerdown','mousedown','pointerup','mouseup'])el.dispatchEvent(type.startsWith('pointer')?new PointerEvent(type,{bubbles:true,pointerType:'mouse'}):new MouseEvent(type,{bubbles:true}));el.click();};
-  async function deleteOne(id,token){
+  async function deleteOne(id,token,mode){
     if(!scanSnapshot||token!==scanSnapshot.token||!scanSnapshot.items.has(id))throw Error('扫描结果已失效，请重新获取');
+    if(!['selected','candidates'].includes(mode))throw Error('删除范围无效，已停止');
     const data=await storageGet(['whitelist','keywords','excludedProjects','projectChats','projectChatOverrides']);
     const a=findAnchor(id);if(!a||!visible(a))throw Error('聊天未加载在当前侧栏，已跳过');
     const pid=projectFor(a)||data.projectChats?.[id];
@@ -120,7 +121,7 @@
     const scanned=scanSnapshot.items.get(id);
     if(title!==scanned.title||projectFor(a)!==scanned.projectId)throw Error('聊天标题或项目归属已变化，请重新获取');
     const words=(data.keywords||'').split(/[,，\n]/).map(s=>s.trim().toLocaleLowerCase()).filter(Boolean);
-    if(data.whitelist?.[id]||words.some(w=>title.toLocaleLowerCase().includes(w))||(pid&&(data.projectChatOverrides?.[id]??!data.excludedProjects?.[pid])))throw Error('此聊天目前受白名单或项目规则保护，已跳过');
+    if(data.whitelist?.[id]||(mode==='candidates'&&(words.some(w=>title.toLocaleLowerCase().includes(w))||(pid&&(data.projectChatOverrides?.[id]??!data.excludedProjects?.[pid])))))throw Error('此聊天目前受白名单或项目规则保护，已跳过');
     a.scrollIntoView({block:'center'});
     await new Promise(resolve=>setTimeout(resolve,120));
     const current=findAnchor(id);if(!current)throw Error('聊天滚动后未加载在当前侧栏，已跳过');
@@ -181,7 +182,7 @@
   chrome.runtime.onMessage.addListener((msg,sender,sendResponse)=>{
     if(msg.type==='SCAN'){scanAll().then(sendResponse).catch(error=>sendResponse({error:error.message}));return true;}
     if(msg.type==='PROJECTS'){sendResponse({projects:getProjects(),project:currentProject()});return;}
-    if(msg.type==='DELETE_ONE'){deleteOne(msg.id,msg.scanToken).then(sendResponse).catch(error=>sendResponse({error:error.message}));return true;}
+    if(msg.type==='DELETE_ONE'){deleteOne(msg.id,msg.scanToken,msg.mode).then(sendResponse).catch(error=>sendResponse({error:error.message}));return true;}
     if(msg.type==='FRAME'){selectRectangle();sendResponse({ok:true});return;}
     if(msg.type==='HIGHLIGHT'){
       const a=findAnchor(msg.id);if(a){a.scrollIntoView({block:'center'});a.style.outline='2px solid #1677ff';setTimeout(()=>a.style.outline='',2000);sendResponse({ok:true});}else sendResponse({ok:false});return;

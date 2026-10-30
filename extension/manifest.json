@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT 聊天白名单助手",
-  "version": "0.0.3.2",
-  "version_name": "0.0.3.20261030114",
-  "description": "扫描 ChatGPT 聊天，建立白名单，核对并逐条删除本次扫描的非白名单聊天。",
+  "version": "0.0.4.1",
+  "version_name": "0.0.4.20261030115",
+  "description": "扫描 ChatGPT 聊天，查看保护清单，并按候选或明确选中范围逐条删除聊天。",
   "permissions": ["storage", "activeTab", "scripting"],
   "content_security_policy": {"extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"},
   "host_permissions": ["https://chatgpt.com/*", "https://chat.openai.com/*"],

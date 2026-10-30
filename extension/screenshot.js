@@ -50,8 +50,8 @@ $('recognize').addEventListener('click',async()=>{
   $('recognize').disabled=true;status('正在本地识别截图，首次加载可能需要一些时间……');
   let worker;
   try {
-    const data=await chrome.storage.local.get(['scan']);chats=data.scan||[];
-    if(!chats.length)throw Error('没有已扫描的聊天。请先在 ChatGPT 页面执行“扫描聊天和项目”。');
+    chats=window.getCurrentScannedChats?.()||[];
+    if(!chats.length)throw Error('没有本次扫描的聊天。请先在 ChatGPT 页面点击“清缓存并重新获取”。');
     const input=document.createElement('canvas');const crop=selection||{x:0,y:0,width:canvas.width,height:canvas.height};
     input.width=Math.round(crop.width);input.height=Math.round(crop.height);
     input.getContext('2d').drawImage(image,crop.x,crop.y,crop.width,crop.height,0,0,input.width,input.height);
@@ -65,8 +65,11 @@ $('recognize').addEventListener('click',async()=>{
 $('save').addEventListener('click',async()=>{
   const ids=[...$('results').querySelectorAll('select')].map(s=>s.value).filter(Boolean);
   if(!ids.length){status('请先选择要加入白名单的聊天');return;}
+  const latest=window.getCurrentScannedChats?.()||[];
+  const found=[...new Set(ids)].map(id=>latest.find(c=>c.id===id&&c.title===chats.find(old=>old.id===id)?.title)).filter(Boolean);
+  if(!found.length){status('选择的聊天已不在本次扫描结果中，或标题已变化。请重新获取并核对。');return;}
   const data=await chrome.storage.local.get(['whitelist']);const whitelist=data.whitelist||{};
-  for(const id of new Set(ids)){const chat=chats.find(c=>c.id===id);if(chat)whitelist[id]={title:chat.title,url:chat.url,createdAt:new Date().toISOString()};}
-  await chrome.storage.local.set({whitelist});status(`已将 ${new Set(ids).size} 条聊天加入白名单。`);
+  for(const chat of found)whitelist[chat.id]={title:chat.title,url:chat.url,createdAt:new Date().toISOString()};
+  await chrome.storage.local.set({whitelist});status(`已核对并将 ${found.length} 条聊天加入白名单。${found.length<new Set(ids).size?'其余条目不在当前扫描结果中，已跳过。':''}`);
 });
 })();

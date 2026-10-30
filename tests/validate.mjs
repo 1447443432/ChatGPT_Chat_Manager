@@ -18,6 +18,8 @@ for (const id of ['scan','resizePopup','screenshot','screenshotPanel','whitelist
 }
 assert(read('content.js').includes("msg.type==='DELETE_ONE'"));
 assert(read('popup.js').includes('scanToken'));
+assert(read('popup.js').includes('getCurrentScannedChats'));
+assert(!read('screenshot.js').includes("get(['scan'])"));
 assert(!/fetch\(/.test(read('popup.js') + read('content.js')),
   'Deletion should use the ChatGPT page controls');
 for (const id of ['file','canvas','recognize','results','save']) {

@@ -18,7 +18,7 @@ async function load(file) {
   const url=URL.createObjectURL(file);
   try { const img=new Image();img.src=url;await img.decode();image=img;canvas.width=img.naturalWidth;canvas.height=img.naturalHeight;selection=null;draw();canvas.hidden=false;$('recognize').disabled=false;$('results').replaceChildren();$('save').hidden=true;$('saveDelete').hidden=true;status('图片已加载，可拖动框选区域；不框选则识别整张图片。'); }
   catch { status('无法读取这张图片'); }
-  finally { URL.revokeObjectURL(url); }
+  finally { URL.revokeObjectURL(url);$('file').value=''; }
 }
 $('file').addEventListener('change',event=>load(event.target.files[0]));
 document.addEventListener('paste',event=>{
@@ -29,7 +29,7 @@ document.addEventListener('paste',event=>{
 canvas.addEventListener('pointerdown',event=>{start=point(event);selection=null;canvas.setPointerCapture(event.pointerId);});
 canvas.addEventListener('pointermove',event=>{if(!start)return;const p=point(event);selection={x:Math.max(0,Math.min(start.x,p.x)),y:Math.max(0,Math.min(start.y,p.y)),width:Math.abs(p.x-start.x),height:Math.abs(p.y-start.y)};draw();});
 canvas.addEventListener('pointerup',()=>{start=null;if(selection&&(selection.width<10||selection.height<10))selection=null;draw();});
-$('clear').addEventListener('click',()=>{selection=null;draw();});
+$('clear').addEventListener('click',()=>{image=null;selection=null;start=null;canvas.hidden=true;ctx.clearRect(0,0,canvas.width,canvas.height);$('file').value='';$('recognize').disabled=true;$('results').replaceChildren();$('save').hidden=true;$('saveDelete').hidden=true;status('图片和识别结果已清除，可重新粘贴或上传图片。');});
 function show(lines) {
   const root=$('results');root.replaceChildren();let matched=0;
   for(const line of lines) {

@@ -33,17 +33,23 @@ function show(lines) {
   const root=$('results');root.replaceChildren();let matched=0;
   for(const line of lines) {
     const value=norm(line);if(value.length<2)continue;
-    const candidates=chats.filter(c=>{const title=norm(c.title);return title===value||(value.length>=4&&title.includes(value));});
+    const exact=chats.filter(c=>norm(c.title)===value);
+    const candidates=exact.length?exact:value.length>=3?chats.filter(c=>{const title=norm(c.title);return title.includes(value)||value.includes(title)&&title.length>=3;}):[];
     const row=document.createElement('div');row.className='result';
     const label=document.createElement('span');label.textContent=line;
+    const match=document.createElement('small');match.className='matchStatus';match.textContent=candidates.length===0?'未找到匹配':exact.length===1?'标题唯一匹配':exact.length>1?`同名 ${exact.length} 条，请确认`:candidates.length===1?'近似匹配 1 条，请确认':`近似匹配 ${candidates.length} 条，请选择`;
     const select=document.createElement('select');select.setAttribute('aria-label',`对应聊天：${line}`);
-    select.add(new Option('不加入白名单',''));
-    for(const chat of chats)select.add(new Option(`${chat.title} (${chat.id})`,chat.id));
-    if(candidates.length===1){select.value=candidates[0].id;matched++;}
-    row.append(label,select);root.append(row);
+    select.add(new Option(candidates.length?'请选择对应聊天':'不加入白名单',''));
+    const preferred=document.createElement('optgroup');preferred.label=exact.length?'标题完全匹配':candidates.length?'可能匹配':'全部扫描聊天';
+    const options=exact.length?exact:candidates.length?candidates:chats;
+    for(const chat of options)preferred.append(new Option(`${chat.title} (${chat.id})`,chat.id));
+    select.append(preferred);
+    if(candidates.length===1&&exact.length===1){select.value=exact[0].id;matched++;}
+    const detail=document.createElement('div');detail.className='resultInfo';detail.append(match,select);
+    row.append(label,detail);root.append(row);
   }
   $('save').hidden=!root.children.length;$('saveDelete').hidden=!root.children.length;
-  status(`识别到 ${root.children.length} 行；自动匹配 ${matched} 行。请逐项核对，未匹配的可手动选择聊天。`);
+  status(`识别到 ${root.children.length} 行；${matched} 行标题唯一匹配。重名和近似匹配需要你手动确认。`);
 }
 $('recognize').addEventListener('click',async()=>{
   if(!image)return;

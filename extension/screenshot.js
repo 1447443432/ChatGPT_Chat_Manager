@@ -51,7 +51,7 @@ $('recognize').addEventListener('click',async()=>{
   let worker;
   try {
     chats=window.getCurrentScannedChats?.()||[];
-    if(!chats.length)throw Error('没有本次扫描的聊天。请先在 ChatGPT 页面点击“清缓存并重新获取”。');
+    if(!chats.length)throw Error('当前页面还没有可识别的聊天。请稍后重试，或点击“重新获取”。');
     const input=document.createElement('canvas');const crop=selection||{x:0,y:0,width:canvas.width,height:canvas.height};
     input.width=Math.round(crop.width);input.height=Math.round(crop.height);
     input.getContext('2d').drawImage(image,crop.x,crop.y,crop.width,crop.height,0,0,input.width,input.height);

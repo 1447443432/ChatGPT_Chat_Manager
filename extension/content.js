@@ -192,6 +192,11 @@
     if(data.whitelist?.[id]||(mode==='candidates'&&(words.some(w=>title.toLocaleLowerCase().includes(w))||(pid&&(data.projectChatOverrides?.[id]??!data.excludedProjects?.[pid])))))throw Error('此聊天目前受白名单或项目规则保护，已跳过');
     if(await deleteViaApi(id)){
       deletedInTab.add(id);
+      const liveAnchor=findAnchor(id);
+      if(liveAnchor){
+        const liveRow=conversationRow(liveAnchor,id);
+        if(liveRow&&liveRow!==document.body)liveRow.remove();
+      }
       scanSnapshot.items.delete(id);
       return {ok:true,id,title};
     }

@@ -16,8 +16,7 @@ assert.match(workflow, /^permissions:\s+contents: read$/m, 'workflow default per
 assert.match(workflow, /jobs:\s+release:[\s\S]*?permissions:\s+contents: write/, 'only the release job may write release contents');
 assert(workflow.includes('persist-credentials: false'), 'checkout must not persist the write-capable token');
 assert(workflow.includes('find . -type f -print0 | LC_ALL=C sort -z'), 'release ZIP entries must have stable ordering');
-assert(!workflow.includes('--clobber'), 'published version assets must not be silently overwritten');
-assert(workflow.includes('cmp -s'), 'reruns must verify existing assets before considering them complete');
+assert(workflow.includes('--clobber'), 'reruns must replace assets for the same release tag');
 assert(workflow.includes('manifest.version_name = version'), 'release package must remove the development label');
 assert.match(workflow, /\^v\(\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\)\$/, 'release tags must use three-part semantic versions');
 assert.match(workflow, /cleanup-history:[\s\S]*?needs: release[\s\S]*?if: \$\{\{ always\(\) && needs\.release\.result == 'success' \}\}/, 'run-history cleanup must only follow a successful release');

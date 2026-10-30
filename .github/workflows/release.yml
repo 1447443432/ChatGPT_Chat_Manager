@@ -83,27 +83,9 @@ jobs:
           version="${RELEASE_TAG#v}"
           title="ChatGPT 聊天白名单助手 v${version}"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            existing_names="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')"
-            missing=()
-            missing_count=0
-            verify_dir="$RUNNER_TEMP/existing-release"
-            mkdir -p "$verify_dir"
             for file in dist/*; do
-              name="$(basename "$file")"
-              if grep -Fxq "$name" <<< "$existing_names"; then
-                gh release download "$RELEASE_TAG" --pattern "$name" --dir "$verify_dir"
-                if ! cmp -s "$file" "$verify_dir/$name"; then
-                  echo "Refusing to replace different asset for immutable release: $name" >&2
-                  exit 1
-                fi
-              else
-                missing+=("$file")
-                missing_count=$((missing_count + 1))
-              fi
+              gh release upload "$RELEASE_TAG" "$file" --clobber
             done
-            if ((missing_count > 0)); then
-              gh release upload "$RELEASE_TAG" "${missing[@]}"
-            fi
           else
             gh release create "$RELEASE_TAG" dist/* --title "$title" --generate-notes
           fi

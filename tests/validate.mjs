@@ -5,10 +5,13 @@ import { fileURLToPath } from 'node:url';
 const read = name => readFileSync(new URL(`../extension/${name}`, import.meta.url), 'utf8');
 const manifest = JSON.parse(read('manifest.json'));
 const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+const workflow = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
 assert.equal(manifest.manifest_version, 3);
 assert.equal(manifest.version, '1.0.0');
 assert.equal(manifest.version_name, '1.0.0');
 assert.equal(packageJson.version, manifest.version);
+assert.match(workflow, /push:\s+tags:\s+- 'v\*'/, 'release must be tag-triggered');
+assert(!/paths(?:-ignore)?:/.test(workflow), 'tag-only release must not use unsupported path filters');
 assert(manifest.permissions.includes('scripting'));
 assert.deepEqual(manifest.host_permissions, ['https://chatgpt.com/*', 'https://chat.openai.com/*']);
 assert.equal(manifest.action.default_popup, 'popup.html');
@@ -45,4 +48,4 @@ assert(read('popup.js').includes('setPointerCapture'));
 for (const file of ['tesseract.min.js','worker.min.js','chi_sim.traineddata.gz','eng.traineddata.gz']) {
   assert(readFileSync(new URL(`../extension/ocr/${file}`, import.meta.url)).length > 1000, `missing local OCR asset ${file}`);
 }
-console.log('PASS: manifest, JavaScript syntax, popup controls, deletion guards');
+console.log('PASS: manifest/version, release trigger, JavaScript syntax, popup controls, deletion guards');

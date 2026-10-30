@@ -41,14 +41,17 @@ function show(lines) {
     const row=document.createElement('div');row.className='result';
     const label=document.createElement('span');label.textContent=line;
     const match=document.createElement('small');match.className='matchStatus';match.textContent=candidates.length===0?'未找到匹配':exact.length===1?'标题唯一匹配':exact.length>1?`同名 ${exact.length} 条，请确认`:contains.length?`文字匹配 ${candidates.length} 条，请选择`:`容错匹配 ${candidates.length} 条，请选择`;
-    const select=document.createElement('select');select.setAttribute('aria-label',`对应聊天：${line}`);
-    select.add(new Option(candidates.length?'请选择对应聊天':'不加入白名单',''));
-    const preferred=document.createElement('optgroup');preferred.label=exact.length?'标题完全匹配':candidates.length?'可能匹配':'全部扫描聊天';
-    const options=candidates.length?candidates:chats;
-    for(const chat of options)preferred.append(new Option(`${chat.title} (${chat.id})`,chat.id));
-    select.append(preferred);
-    if(candidates.length===1&&exact.length===1){select.value=exact[0].id;matched++;}
-    const detail=document.createElement('div');detail.className='resultInfo';detail.append(match,select);
+    const picker=document.createElement('div');picker.className='chatPicker';
+    const search=document.createElement('input');search.type='search';search.placeholder='搜索聊天标题或 ID';search.setAttribute('aria-label',`搜索对应聊天：${line}`);search.autocomplete='off';
+    const list=document.createElement('div');list.className='chatOptions';list.hidden=true;list.setAttribute('role','listbox');
+    let selectedId='';
+    const renderOptions=query=>{const q=norm(query);list.replaceChildren();const results=(q?chats.filter(c=>norm(c.title).includes(q)||norm(c.id).includes(q)):candidates).slice(0,30);for(const chat of results){const option=document.createElement('button');option.type='button';option.className='chatOption';option.textContent=`${chat.title} (${chat.id})`;option.setAttribute('role','option');option.addEventListener('click',()=>{selectedId=chat.id;search.value=`${chat.title} (${chat.id})`;list.hidden=true;});list.append(option);}if(!results.length){const empty=document.createElement('div');empty.className='chatOptionEmpty';empty.textContent='没有匹配的聊天';list.append(empty);}list.hidden=false;};
+    search.addEventListener('focus',()=>renderOptions(selectedId?'':search.value));search.addEventListener('input',()=>{selectedId='';renderOptions(search.value);});search.addEventListener('keydown',event=>{if(event.key==='Escape')list.hidden=true;});
+    document.addEventListener('pointerdown',event=>{if(!picker.contains(event.target))list.hidden=true;});
+    if(candidates.length===1&&exact.length===1){selectedId=exact[0].id;search.value=`${exact[0].title} (${exact[0].id})`;matched++;}
+    picker.append(search,list);
+    const detail=document.createElement('div');detail.className='resultInfo';detail.append(match,picker);
+    row.dataset.chatId='';Object.defineProperty(row,'selectedChatId',{get:()=>selectedId});
     row.append(label,detail);root.append(row);
   }
   $('save').hidden=!root.children.length;$('saveDelete').hidden=!root.children.length;
@@ -72,7 +75,7 @@ $('recognize').addEventListener('click',async()=>{
   finally {if(worker)await worker.terminate();$('recognize').disabled=false;}
 });
 function selectedChats(){
-  const ids=[...$('results').querySelectorAll('select')].map(s=>s.value).filter(Boolean);
+  const ids=[...$('results').querySelectorAll('.result')].map(row=>row.selectedChatId).filter(Boolean);
   if(!ids.length){status('请先选择截图对应的聊天');return [];}
   const latest=window.getCurrentScannedChats?.()||[];
   const found=[...new Set(ids)].map(id=>latest.find(c=>c.id===id&&c.title===chats.find(old=>old.id===id)?.title)).filter(Boolean);

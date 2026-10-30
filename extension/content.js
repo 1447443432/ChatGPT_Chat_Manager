@@ -5,6 +5,7 @@
   const projectId = value => value?.match(/^g-p-[a-f0-9]{32}/i)?.[0] || value || null;
   const normalize = href => { try { const url=new URL(href,location.href); const m=url.pathname.match(CHAT); return m ? m[1] : null; } catch {return null;} };
   const normTitle = s => (s||'').replace(/\s+/g,' ').trim();
+  const deletedInTab=new Set();
   const rowFor = a => a.closest('div[data-testid*="conversation"],li,div.group,div[class*="group"],div[class*="relative"]') || a.parentElement;
   const isProject = a => /\/g\/|\/project\//i.test(new URL(a.href).pathname) || !!a.closest('[data-project-id]');
   const currentProject = () => {
@@ -24,7 +25,7 @@
     const result = new Map();
     for (const a of document.querySelectorAll('a[href]')) {
       const id = normalize(a.href);
-      if (!id) continue;
+      if (!id||deletedInTab.has(id)) continue;
       const title = normTitle(a.getAttribute('title') || a.innerText || a.textContent || '');
       if (!title || title.length > 250) continue;
       const row = rowFor(a);
@@ -150,6 +151,34 @@
     const expected=buttons.filter(button=>normTitle(button.getAttribute('aria-label')||button.getAttribute('title'))===expectedLabel||normTitle(button.getAttribute('aria-label')||button.getAttribute('title'))===localizedLabel);
     return expected.length===1?expected[0]:null;
   }
+  async function deleteViaApi(id){
+    let session;
+    try{
+      const sessionResponse=await fetch('/api/auth/session',{credentials:'include'});
+      if(!sessionResponse.ok)return false;
+      session=await sessionResponse.json();
+    }catch{return false;}
+    if(!session?.accessToken)return false;
+    let response;
+    try{
+      response=await fetch(`/backend-api/conversation/${encodeURIComponent(id)}`,{
+        method:'PATCH',
+        credentials:'include',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${session.accessToken}`},
+        body:JSON.stringify({is_visible:false})
+      });
+    }catch{throw Error('删除请求连接中断，无法确认服务端结果；请重新获取列表核对后再操作');}
+    if(response.status===204)return true;
+    if(!response.ok){
+      if(response.status===429)throw Error('ChatGPT 暂时限制了删除请求，请稍后重试');
+      if(response.status>=500)throw Error(`ChatGPT 服务端返回 ${response.status}，删除结果未确认；请重新获取列表核对`);
+      return false;
+    }
+    let result;
+    try{result=await response.json();}catch{throw Error('ChatGPT 未返回可核验的删除结果；请重新获取列表核对后再操作');}
+    if(result?.success!==true)throw Error('ChatGPT 未明确确认删除成功；请重新获取列表核对后再操作');
+    return true;
+  }
   async function deleteOne(id,token,mode){
     if(!scanSnapshot||token!==scanSnapshot.token||!scanSnapshot.items.has(id))throw Error('扫描结果已失效，请重新获取');
     if(!['selected','candidates'].includes(mode))throw Error('删除范围无效，已停止');
@@ -161,6 +190,11 @@
     if(title!==scanned.title||projectFor(a)!==scanned.projectId)throw Error('聊天标题或项目归属已变化，请重新获取');
     const words=(data.keywords||'').split(/[,，\n]/).map(s=>s.trim().toLocaleLowerCase()).filter(Boolean);
     if(data.whitelist?.[id]||(mode==='candidates'&&(words.some(w=>title.toLocaleLowerCase().includes(w))||(pid&&(data.projectChatOverrides?.[id]??!data.excludedProjects?.[pid])))))throw Error('此聊天目前受白名单或项目规则保护，已跳过');
+    if(await deleteViaApi(id)){
+      deletedInTab.add(id);
+      scanSnapshot.items.delete(id);
+      return {ok:true,id,title};
+    }
     a.scrollIntoView({block:'center'});
     await new Promise(resolve=>setTimeout(resolve,120));
     const current=findAnchor(id);if(!current)throw Error('聊天滚动后未加载在当前侧栏，已跳过');
@@ -181,6 +215,7 @@
     const confirm=await waitFor(()=>{const direct=document.querySelector('[data-testid="delete-conversation-confirm-button"]');if(direct&&visible(direct))return direct;const dialog=[...document.querySelectorAll('[role="dialog"],[role="alertdialog"]')].find(visible);if(!dialog)return null;const buttons=[...dialog.querySelectorAll('button,[role="button"]')].filter(visible).filter(el=>exactText(el,['删除','Delete','删除聊天','Delete chat']));return buttons.length===1?buttons[0]:null;});
     nativeClick(confirm);
     await waitFor(()=>!findAnchor(id),6000).catch(()=>{throw Error('点击确认后聊天仍在列表中，结果未确认');});
+    deletedInTab.add(id);
     scanSnapshot.items.delete(id);
     return {ok:true,id,title};
   }

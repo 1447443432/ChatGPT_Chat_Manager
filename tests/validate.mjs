@@ -8,7 +8,7 @@ const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.me
 const workflow = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
 assert.equal(manifest.manifest_version, 3);
 assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
-assert.equal(manifest.version_name, `${manifest.version} 开发版`);
+assert.equal(manifest.version_name, manifest.version);
 assert.equal(packageJson.version, `${manifest.version}-dev`);
 assert.match(workflow, /push:\s+tags:\s+- 'v\*'/, 'release must be tag-triggered');
 assert(!/paths(?:-ignore)?:/.test(workflow), 'tag-only release must not use unsupported path filters');

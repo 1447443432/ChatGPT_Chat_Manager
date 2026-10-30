@@ -1,6 +1,6 @@
 # ChatGPT 聊天白名单助手
 
-**开发版 1.0.1｜Chrome / Edge｜Manifest V3**
+**正式版 1.0.1｜Chrome / Edge｜Manifest V3**
 
 扫描 ChatGPT 当前已加载的聊天，按白名单、关键词和项目规则保护内容；支持搜索、截图识别、CSV 导出、批量整理项目，以及核对后逐条删除。
 

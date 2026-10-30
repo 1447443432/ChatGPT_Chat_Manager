@@ -8,6 +8,7 @@
     <button class="tab active" data-panel="chatsPanel" aria-selected="true">聊天 <span id="count">0</span></button>
     <button class="tab" data-panel="projectsPanel" aria-selected="false">项目 <span id="projectCount">0</span></button>
     <button id="whitelistToggle" class="tab" data-panel="whitelistPanel" aria-selected="false">保护清单 <span id="whitelistCount">0</span></button>
+    <button class="tab" data-panel="deletePanel" aria-selected="false">待删除 <span id="deleteCount">0</span></button>
     <button id="screenshot" class="tab" data-panel="screenshotPanel" aria-selected="false">截图</button>
   </nav>
   <main>
@@ -17,7 +18,6 @@
       <div class="pager"><label for="pageSize">每页</label><input id="pageSize" type="number" min="1" max="100" value="10" inputmode="numeric"><span>条</span><span id="pageSummary" class="pageSummary">共 0 页</span></div>
       <div class="pageButtons"><button id="firstPage" title="首页" aria-label="首页">«</button><button id="prevPage" title="上一页" aria-label="上一页">‹</button><label for="pageInput">第</label><input id="pageInput" type="number" min="1" value="1" inputmode="numeric" aria-label="跳转到第几页"><span id="pageTotal">/ 0 页</span><button id="nextPage" title="下一页" aria-label="下一页">›</button><button id="lastPage" title="末页" aria-label="末页">»</button></div>
       <details class="keywordSettings"><summary>按标题关键词保留</summary><label for="keywords">关键词</label><textarea id="keywords" rows="2" placeholder="每行一个，或用逗号分隔"></textarea><button id="saveWords">保存关键词</button></details>
-      <details id="deleteArea" class="deleteArea"><summary>删除清单 <span id="deleteCount">待删除 0 条</span></summary><label for="deleteMode">选择删除范围</label><select id="deleteMode"><option value="selected">待删除名单（我逐条选中的聊天）</option><option value="candidates">全部非保护候选</option></select><p id="deleteHint">重新获取后，可在聊天列表点“待删除”，或从截图识别加入名单。</p><div class="deleteListTitle"><b id="deleteListLabel">本次将删除的聊天</b><span id="deleteListTotal"></span></div><div id="deletePreview" class="rows"></div><label class="confirmCheck"><input id="deleteConfirm" type="checkbox"><span>我已核对上方名单，确认删除这些聊天（删除后无法恢复）</span></label><div class="deleteActions"><button id="deleteStart" class="danger" disabled>确认删除</button><button id="deleteStop" disabled>停止</button></div><div id="deleteProgress" role="status"></div></details>
     </section>
     <section id="projectsPanel" class="panel" hidden>
       <div class="sectionTitle"><div><b>项目</b><small>识别到的项目默认保护，可取消</small></div></div>
@@ -26,6 +26,10 @@
     <section id="whitelistPanel" class="panel" hidden>
       <div class="sectionTitle"><div><b>保护清单</b><small>显示手动、关键词和项目保护的聊天</small></div></div>
       <div id="whitelistList" class="rows"></div><button id="reset" class="danger">清空手动白名单</button>
+    </section>
+    <section id="deletePanel" class="panel" hidden>
+      <div class="sectionTitle"><div><b>待删除名单</b><small>可从聊天列表逐条添加，或在截图页识别后加入</small></div></div>
+      <div id="deleteArea" class="deleteArea"><label for="deleteMode">选择删除范围</label><select id="deleteMode"><option value="selected">待删除名单（我逐条选中的聊天）</option><option value="candidates">全部非保护候选</option></select><p id="deleteHint">重新获取后，可在聊天列表点“待删除”，或从截图识别加入名单。</p><div class="deleteListTitle"><b id="deleteListLabel">本次将删除的聊天</b><span id="deleteListTotal"></span></div><div id="deletePreview" class="rows"></div><label class="confirmCheck"><input id="deleteConfirm" type="checkbox"><span>我已核对上方名单，确认删除这些聊天（删除后无法恢复）</span></label><div class="deleteActions"><button id="deleteStart" class="danger" disabled>确认删除</button><button id="deleteStop" disabled>停止</button></div><div id="deleteProgress" role="status"></div></div>
     </section>
     <section id="screenshotPanel" class="panel" hidden>
       <div class="sectionTitle"><div><b>截图识别</b><small>粘贴或上传图片，框选后核对匹配</small></div></div>

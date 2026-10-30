@@ -80,6 +80,6 @@ $('saveDelete').addEventListener('click',()=>{
   const found=selectedChats();if(!found.length)return;
   const added=window.addDeleteSelections?.(found)||0;
   status(added?`已将 ${added} 条聊天加入待删除。手动白名单中的聊天需要先移出保护清单。`:'未加入待删除：请先重新获取，并检查所选聊天是否已在手动白名单中。');
-  if(added){$('deleteMode').value='selected';$('deleteMode').dispatchEvent(new Event('change'));document.querySelector('.tab[data-panel="chatsPanel"]').click();$('deleteArea').open=true;}
+  if(added){$('deleteMode').value='selected';$('deleteMode').dispatchEvent(new Event('change'));document.querySelector('.tab[data-panel="deletePanel"]').click();}
 });
 })();

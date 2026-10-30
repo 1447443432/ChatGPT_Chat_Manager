@@ -3,7 +3,8 @@ const $ = id => document.getElementById(id);
 const canvas = $('canvas'), ctx = canvas.getContext('2d');
 let image, selection, start, chats = [];
 const status = message => $('screenshotStatus').textContent = message;
-const norm = text => text.toLocaleLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
+const norm = text => String(text||'').normalize('NFKC').toLocaleLowerCase().replace(/[\s\p{P}\p{S}\p{Cf}\u200b-\u200f\ufeff]/gu, '');
+function similarity(a,b){if(!a||!b)return 0;let previous=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){const current=[i];for(let j=1;j<=b.length;j++)current[j]=Math.min(current[j-1]+1,previous[j]+1,previous[j-1]+(a[i-1]===b[j-1]?0:1));previous=current;}return 1-previous[b.length]/Math.max(a.length,b.length);}
 const point = event => { const box = canvas.getBoundingClientRect(); return {x:(event.clientX-box.left)*canvas.width/box.width,y:(event.clientY-box.top)*canvas.height/box.height}; };
 function draw() {
   if (!image) return;
@@ -34,14 +35,16 @@ function show(lines) {
   for(const line of lines) {
     const value=norm(line);if(value.length<2)continue;
     const exact=chats.filter(c=>norm(c.title)===value);
-    const candidates=exact.length?exact:value.length>=3?chats.filter(c=>{const title=norm(c.title);return title.includes(value)||value.includes(title)&&title.length>=3;}):[];
+    const contains=exact.length?exact:value.length>=3?chats.filter(c=>{const title=norm(c.title);return title.includes(value)||value.includes(title)&&title.length>=3;}):[];
+    const fuzzy=exact.length||contains.length||value.length<4?[]:chats.map(c=>({chat:c,score:similarity(value,norm(c.title))})).filter(x=>x.score>=0.68).sort((a,b)=>b.score-a.score);
+    const candidates=contains.length?contains:fuzzy.map(x=>x.chat);
     const row=document.createElement('div');row.className='result';
     const label=document.createElement('span');label.textContent=line;
-    const match=document.createElement('small');match.className='matchStatus';match.textContent=candidates.length===0?'未找到匹配':exact.length===1?'标题唯一匹配':exact.length>1?`同名 ${exact.length} 条，请确认`:candidates.length===1?'近似匹配 1 条，请确认':`近似匹配 ${candidates.length} 条，请选择`;
+    const match=document.createElement('small');match.className='matchStatus';match.textContent=candidates.length===0?'未找到匹配':exact.length===1?'标题唯一匹配':exact.length>1?`同名 ${exact.length} 条，请确认`:contains.length?`文字匹配 ${candidates.length} 条，请选择`:`容错匹配 ${candidates.length} 条，请选择`;
     const select=document.createElement('select');select.setAttribute('aria-label',`对应聊天：${line}`);
     select.add(new Option(candidates.length?'请选择对应聊天':'不加入白名单',''));
     const preferred=document.createElement('optgroup');preferred.label=exact.length?'标题完全匹配':candidates.length?'可能匹配':'全部扫描聊天';
-    const options=exact.length?exact:candidates.length?candidates:chats;
+    const options=candidates.length?candidates:chats;
     for(const chat of options)preferred.append(new Option(`${chat.title} (${chat.id})`,chat.id));
     select.append(preferred);
     if(candidates.length===1&&exact.length===1){select.value=exact[0].id;matched++;}

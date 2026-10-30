@@ -2,7 +2,7 @@
 
 <p align="center"><img src="extension/icons/icon-128.png" width="72" alt="聊天白名单助手图标"></p>
 
-**Chrome / Edge · Manifest V3 · v1.0.1**
+**Chrome / Edge · Manifest V3 · v1.0.2**
 
 扫描、保护和整理 ChatGPT 聊天；删除前可逐条核对。
 
@@ -16,14 +16,15 @@
 ## 功能
 
 - 自动扫描当前页面侧栏已加载的聊天；滚动侧栏时继续补充，并可搜索标题或 ID。
-- 用手动保护、标题关键词和项目规则保护聊天；支持按页或按搜索结果批量选择。
+- 用手动保护、标题关键词和项目规则保护聊天；项目聊天显示所属项目名。
+- 支持按页或按搜索结果批量操作；受保护聊天会跳过待删除，可清空待删除名单。
 - 批量加入保护清单、加入待删除，或移入/移出项目；支持在 ChatGPT 中新建项目。
 - 粘贴或上传截图进行本地 OCR，核对匹配后加入保护清单或待删除。
 - 导出 CSV。删除前核对清单并确认；每条聊天都会重新校验，异常时停止。
 
 ## 安装与使用
 
-1. 从 [v1.0.1 Release](https://github.com/1447443432/ChatGPT_Chat_Manager/releases/tag/v1.0.1) 下载 ZIP 并解压。
+1. 从 [v1.0.2 Release](https://github.com/1447443432/ChatGPT_Chat_Manager/releases/tag/v1.0.2) 下载 ZIP 并解压。
 2. 在 `chrome://extensions/` 或 `edge://extensions/` 开启“开发人员模式”，选择“加载解压缩的扩展”，载入解压目录。
 3. 打开或刷新 ChatGPT 页面，再点击扩展图标。扩展会自动获取当前侧栏聊天。
 4. 在“聊天”页搜索并批量处理；删除请到“待删除”页核对并确认。

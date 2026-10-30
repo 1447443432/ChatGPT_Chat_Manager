@@ -111,6 +111,32 @@
   const visible=el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0;};
   const exactText=(el,values)=>values.includes(normTitle(el.textContent||el.getAttribute('aria-label')));
   const nativeClick=el=>{for(const type of ['pointerdown','mousedown','pointerup','mouseup'])el.dispatchEvent(type.startsWith('pointer')?new PointerEvent(type,{bubbles:true,pointerType:'mouse'}):new MouseEvent(type,{bubbles:true}));el.click();};
+  function conversationRow(anchor,id){
+    const stable=anchor.closest('li[data-testid^="history-item-"],[data-testid^="history-item-"],[data-sidebar-item="true"]');
+    if(stable)return stable;
+    let fallback=null;
+    for(let row=anchor.parentElement,depth=0;row&&row!==document.body&&depth<10;row=row.parentElement,depth++){
+      const ids=new Set([...row.querySelectorAll('a[href]')].map(link=>normalize(link.href)).filter(Boolean));
+      if(ids.size>1)break;
+      if(ids.has(id)){
+        fallback=row;
+        if(row.querySelector('button[data-testid*="options"],button[aria-haspopup="menu"],button[aria-label*="options" i],button[aria-label*="选项"]'))return row;
+      }
+    }
+    return fallback||anchor.parentElement;
+  }
+  function rowMenuButton(row,title){
+    const buttons=[...row.querySelectorAll('button,[role="button"]')].filter(visible);
+    const selectors=buttons.filter(button=>{
+      const testid=button.getAttribute('data-testid')||'';
+      const label=button.getAttribute('aria-label')||button.getAttribute('title')||'';
+      return /history-item-.*-options/i.test(testid)||/conversation options|对话选项|更多选项|more options/i.test(label)||(/options|选项|菜单/i.test(label)&&button.getAttribute('aria-haspopup')==='menu');
+    });
+    if(selectors.length===1)return selectors[0];
+    if(selectors.length>1)return null;
+    const expected=buttons.filter(button=>normTitle(button.getAttribute('aria-label')||button.getAttribute('title'))===`Open conversation options for ${title}`||normTitle(button.getAttribute('aria-label')||button.getAttribute('title'))===`打开${title}的对话选项`);
+    return expected.length===1?expected[0]:null;
+  }
   async function deleteOne(id,token,mode){
     if(!scanSnapshot||token!==scanSnapshot.token||!scanSnapshot.items.has(id))throw Error('扫描结果已失效，请重新获取');
     if(!['selected','candidates'].includes(mode))throw Error('删除范围无效，已停止');
@@ -125,11 +151,14 @@
     a.scrollIntoView({block:'center'});
     await new Promise(resolve=>setTimeout(resolve,120));
     const current=findAnchor(id);if(!current)throw Error('聊天滚动后未加载在当前侧栏，已跳过');
-    let row=current.closest('li,[data-sidebar-item="true"]')||current;
-    if(row===current)for(let i=0;i<4;i++){const parent=row.parentElement;if(!parent||parent.querySelectorAll('a[href*="/c/"]').length>1)break;row=parent;}
+    const row=conversationRow(current,id);
+    if(!row)throw Error('未找到该聊天对应的侧栏行，已跳过');
     row.dispatchEvent(new MouseEvent('mouseenter',{bubbles:true}));
-    row.dispatchEvent(new PointerEvent('pointerover',{bubbles:true}));
-    const menu=await waitFor(()=>{const buttons=[...row.querySelectorAll('button,[role="button"]')].filter(visible);const labeled=buttons.filter(b=>/more|options|更多|选项|菜单/i.test([b.getAttribute('aria-label'),b.getAttribute('title'),b.getAttribute('data-testid')].join(' ')));return labeled.length===1?labeled[0]:buttons.length===1?buttons[0]:null;},1200).catch(()=>{throw Error('无法唯一定位该聊天的更多菜单，已跳过');});
+    const box=current.getBoundingClientRect(),x=box.left+Math.min(box.width-2,Math.max(2,box.width*.7)),y=box.top+box.height/2;
+    const hit=document.elementFromPoint(x,y)||current;
+    hit.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:x,clientY:y,pointerType:'mouse'}));
+    hit.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:x,clientY:y}));
+    const menu=await waitFor(()=>rowMenuButton(row,title),1800).catch(()=>{throw Error('ChatGPT 未在该聊天行提供可定位的“更多”菜单；请确认聊天行已加载，已跳过');});
     if([...document.querySelectorAll('[role="menu"],[role="dialog"],[role="alertdialog"]')].some(visible))throw Error('页面上已有菜单或对话框，请关闭后重新获取');
     nativeClick(menu);
     const choice=await waitFor(()=>{const options=[...document.querySelectorAll('[role="menuitem"], [data-radix-collection-item], [role="menu"] button')].filter(visible).filter(el=>exactText(el,['删除','Delete','删除聊天','Delete chat']));return options.length===1?options[0]:null;});

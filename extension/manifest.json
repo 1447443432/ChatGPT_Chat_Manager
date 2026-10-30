@@ -4,9 +4,24 @@
   "version": "1.0.1",
   "version_name": "1.0.1",
   "description": "扫描并保护 ChatGPT 聊天，整理项目，并在核对后逐条删除。",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
   "permissions": ["storage", "activeTab", "scripting"],
   "content_security_policy": {"extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"},
   "host_permissions": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
   "content_scripts": [{"matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"], "js": ["content.js"], "run_at": "document_idle"}],
-  "action": {"default_title": "ChatGPT 聊天白名单助手", "default_popup": "popup.html"}
+  "action": {
+    "default_title": "ChatGPT 聊天白名单助手",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  }
 }

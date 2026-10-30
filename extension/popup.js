@@ -41,7 +41,7 @@ function render(){
  $('projectCount').textContent=knownProjects().size;
  const shown=filteredChats();const totalPages=Math.max(1,Math.ceil(shown.length/pageSize));page=Math.min(Math.max(1,page),totalPages);
  $('pageSize').value=pageSize;$('pageInput').value=page;$('pageInput').max=totalPages;
- $('pageSummary').textContent=`${shown.length===chats.length?`共 ${chats.length} 条`:`找到 ${shown.length} / ${chats.length} 条`} · ${shown.length?totalPages:0} 页`;
+ $('pageSummary').textContent=shown.length===chats.length?`共 ${chats.length} 条`:`找到 ${shown.length}/${chats.length} 条`;
  $('pageTotal').textContent=`/ ${shown.length?totalPages:0} 页`;
  $('searchSummary').textContent=$('chatSearch').value.trim()?`${shown.length} 条`:'';
  $('clearChatSearch').hidden=!$('chatSearch').value;

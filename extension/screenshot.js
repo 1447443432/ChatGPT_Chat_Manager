@@ -48,14 +48,14 @@ function show(lines) {
     const renderOptions=query=>{const q=norm(query);list.replaceChildren();const results=(q?chats.filter(c=>norm(c.title).includes(q)||norm(c.id).includes(q)):candidates).slice(0,30);for(const chat of results){const option=document.createElement('button');option.type='button';option.className='chatOption';option.textContent=`${chat.title} (${chat.id})`;option.setAttribute('role','option');option.addEventListener('click',()=>{selectedId=chat.id;search.value=`${chat.title} (${chat.id})`;list.hidden=true;});list.append(option);}if(!results.length){const empty=document.createElement('div');empty.className='chatOptionEmpty';empty.textContent='没有匹配的聊天';list.append(empty);}list.hidden=false;};
     search.addEventListener('focus',()=>renderOptions(selectedId?'':search.value));search.addEventListener('input',()=>{selectedId='';renderOptions(search.value);});search.addEventListener('keydown',event=>{if(event.key==='Escape')list.hidden=true;});
     document.addEventListener('pointerdown',event=>{if(!picker.contains(event.target))list.hidden=true;});
-    if(candidates.length===1&&exact.length===1){selectedId=exact[0].id;search.value=`${exact[0].title} (${exact[0].id})`;matched++;}
+    if(candidates.length===1){selectedId=candidates[0].id;search.value=`${candidates[0].title} (${candidates[0].id})`;matched++;}
     picker.append(search,list);
     const detail=document.createElement('div');detail.className='resultInfo';detail.append(match,picker);
     row.dataset.chatId='';Object.defineProperty(row,'selectedChatId',{get:()=>selectedId});
     row.append(label,detail);root.append(row);
   }
   $('save').hidden=!root.children.length;$('saveDelete').hidden=!root.children.length;
-  status(`识别到 ${root.children.length} 行；${matched} 行标题唯一匹配。重名和近似匹配需要你手动确认。`);
+  status(`识别到 ${root.children.length} 行；${matched} 行已自动选中唯一候选。多条候选需要你手动确认。`);
 }
 $('recognize').addEventListener('click',async()=>{
   if(!image)return;

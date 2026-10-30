@@ -1,29 +1,82 @@
 const $ = id=>document.getElementById(id);
-let chats=[];let whitelist={};let keywords='';
+let chats=[];let projects=[];let whitelist={};let keywords='';let protectedProjects={};let excludedProjects={};let projectChats={};let projectChatDetails={};let projectChatOverrides={};let projectNames={};let expandedProjects=new Set();
+let page=1,pageSize=10,scanToken=null,deleting=false,stopDeletion=false,scanning=false;
 const get = keys=>new Promise(resolve=>chrome.storage.local.get(keys,resolve));
 const set = data=>new Promise(resolve=>chrome.storage.local.set(data,resolve));
 const split = s=>s.split(/[,，\n]/).map(x=>x.trim().toLocaleLowerCase()).filter(Boolean);
+const canonicalProjectId = id=>id?.match(/^g-p-[a-f0-9]{32}/i)?.[0]||id;
 const status = s=>$('status').textContent=s;
+$('versionLabel').textContent=`v${chrome.runtime.getManifest().version_name||chrome.runtime.getManifest().version}`;
 async function active(){const tabs=await chrome.tabs.query({active:true,currentWindow:true});const tab=tabs[0];if(!tab||!/^https:\/\/(chatgpt\.com|chat\.openai\.com)\//.test(tab.url||''))throw Error('请先打开 chatgpt.com 网页');return tab;}
-async function send(type,arg={}){const tab=await active();return chrome.tabs.sendMessage(tab.id,{type,...arg});}
-function protectedChat(c){return !!whitelist[c.id]||split(keywords).some(x=>c.title.toLocaleLowerCase().includes(x))||c.project;}
-function render(){
- const keep=chats.filter(protectedChat).length;
- $('stats').textContent=`已扫描 ${chats.length} 条 ｜保护 ${keep} 条 ｜候选 ${chats.length-keep} 条`;
- $('count').textContent=`(${chats.length})`;
- const root=$('list');root.replaceChildren();
- for(const c of chats){const row=document.createElement('div');row.className='chat';
- const check=document.createElement('input');check.type='checkbox';check.checked=!!whitelist[c.id];check.title='手动强制保护';check.addEventListener('change',async()=>{if(check.checked)whitelist[c.id]={title:c.title,url:c.url,createdAt:new Date().toISOString()};else delete whitelist[c.id];await set({whitelist});render();});
- const name=document.createElement('span');name.className='name';name.textContent=c.title;name.title=c.url;
- const mark=document.createElement('span');const safe=protectedChat(c);mark.className='mark '+(safe?'protected':'candidate');mark.textContent=c.project?'项目保护':safe?'保留':'候选';
- row.append(check,name,mark);row.addEventListener('dblclick',()=>send('HIGHLIGHT',{id:c.id}).catch(e=>status(e.message)));root.append(row);
+async function send(type,arg={}){const tab=await active();try{return await chrome.tabs.sendMessage(tab.id,{type,...arg});}catch(error){if(!/Receiving end does not exist|Could not establish connection/i.test(error.message))throw error;await chrome.scripting.executeScript({target:{tabId:tab.id},files:['content.js']});return chrome.tabs.sendMessage(tab.id,{type,...arg});}}
+const projectProtected=(id,chatId)=>!!id&&(chatId&&projectChatOverrides[chatId]!==undefined?projectChatOverrides[chatId]:!excludedProjects[canonicalProjectId(id)]);
+function protectedChat(c){return !!whitelist[c.id]||split(keywords).some(x=>c.title.toLocaleLowerCase().includes(x))||projectProtected(c.projectId||projectChats[c.id],c.id);}
+function knownProjects(){const known=new Map(projects.map(p=>[p.id,p]));for(const [id,title] of Object.entries(protectedProjects))if(!known.has(id))known.set(id,{id,title});for(const id of Object.values(projectChats))if(id&&!known.has(id))known.set(id,{id,title:id});return known;}
+function renderProjects(){
+ const root=$('projects');root.replaceChildren();
+ const known=knownProjects();
+ for(const [id,project] of known){
+  const children=Object.entries(projectChatDetails).filter(([,c])=>c.projectId===id).map(([chatId,c])=>({id:chatId,...c}));
+  const title=projectNames[id]||project.title;const named=title&&title!==id;
+  const row=document.createElement('div');row.className='chat projectRow';
+  const toggle=document.createElement('button');toggle.className='treeToggle';toggle.textContent=expandedProjects.has(id)?'▾':'▸';toggle.setAttribute('aria-label',`${expandedProjects.has(id)?'收起':'展开'}项目 ${named?title:id}`);toggle.disabled=!children.length;toggle.addEventListener('click',()=>{if(expandedProjects.has(id))expandedProjects.delete(id);else expandedProjects.add(id);renderProjects();});
+  const check=document.createElement('input');check.type='checkbox';check.checked=!excludedProjects[id]&&children.every(c=>projectProtected(id,c.id));check.indeterminate=children.some(c=>projectProtected(id,c.id))&&!check.checked;check.setAttribute('aria-label',`保护项目 ${named?title:id} 下的全部聊天`);
+  check.addEventListener('change',async()=>{if(check.checked)delete excludedProjects[id];else excludedProjects[id]=true;for(const c of children)delete projectChatOverrides[c.id];await set({excludedProjects,projectChatOverrides});render();status(check.checked?'已保护整个项目':'已取消该项目的保护规则；手动白名单和关键词仍独立生效。');});
+  const name=document.createElement('span');name.className='name';name.textContent=named?title:'未识别项目名称';name.title=id;
+  const rename=document.createElement('button');rename.className='rename';rename.textContent=named?'改名':'设置名称';rename.addEventListener('click',()=>{const input=document.createElement('input');input.className='renameInput';input.value=named?title:'';name.replaceWith(input);input.focus();let done=false;const saveName=async()=>{if(done)return;done=true;const value=input.value.trim();if(value){projectNames[id]=value;await set({projectNames});}renderProjects();};input.addEventListener('keydown',e=>{if(e.key==='Enter')saveName();if(e.key==='Escape'){done=true;renderProjects();}});input.addEventListener('blur',saveName,{once:true});});
+  const count=document.createElement('span');count.className='childCount';count.textContent=`${children.length} 条`;
+  row.append(toggle,check,name,count,rename);root.append(row);
+  if(expandedProjects.has(id))for(const c of children){const child=document.createElement('div');child.className='chat childRow';const childCheck=document.createElement('input');childCheck.type='checkbox';childCheck.checked=projectProtected(id,c.id);childCheck.setAttribute('aria-label',`保护聊天 ${c.title}`);childCheck.addEventListener('change',async()=>{projectChatOverrides[c.id]=childCheck.checked;await set({projectChatOverrides});render();});const childName=document.createElement('span');childName.className='name';childName.textContent=c.title||c.id;child.append(childCheck,childName);root.append(child);}
  }
 }
-async function scan(){try{const r=await send('SCAN');chats=r.chats;await set({scan:chats,scanAt:new Date().toISOString()});render();status('扫描完成；仅包含当前已加载的可见聊天。滚动加载后需重新扫描。');}catch(e){status(e.message+'；请刷新 ChatGPT 页面后再试。');}}
+function render(){
+ renderProjects();
+ renderWhitelist();
+ const keep=chats.filter(protectedChat).length;
+ $('stats').textContent=`已扫描 ${chats.length} 条 · 保护 ${keep} 条 · 候选 ${chats.length-keep} 条`;
+ $('count').textContent=chats.length;
+ $('projectCount').textContent=knownProjects().size;
+ const totalPages=Math.max(1,Math.ceil(chats.length/pageSize));page=Math.min(Math.max(1,page),totalPages);
+ $('pageSize').value=pageSize;$('pageInput').value=page;$('pageInput').max=totalPages;
+ $('pageSummary').textContent=`共 ${chats.length} 条 · ${chats.length?totalPages:0} 页`;
+ $('pageTotal').textContent=`/ ${chats.length?totalPages:0} 页`;
+ for(const id of ['firstPage','prevPage'])$(id).disabled=page<=1;
+ for(const id of ['nextPage','lastPage'])$(id).disabled=page>=totalPages;
+ const root=$('list');root.replaceChildren();
+ for(const c of chats.slice((page-1)*pageSize,page*pageSize)){const row=document.createElement('div');row.className='chat';
+ const check=document.createElement('input');check.type='checkbox';check.checked=!!whitelist[c.id];check.title='手动强制保护';check.addEventListener('change',async()=>{if(check.checked)whitelist[c.id]={title:c.title,url:c.url,createdAt:new Date().toISOString()};else delete whitelist[c.id];await set({whitelist});render();});
+ const name=document.createElement('span');name.className='name';name.textContent=c.title;name.title=c.url;
+ const mark=document.createElement('span');const safe=protectedChat(c);mark.className='mark '+(safe?'protected':'candidate');mark.textContent=projectProtected(c.projectId||projectChats[c.id],c.id)?'项目保护':safe?'保留':'候选';
+ row.append(check,name,mark);root.append(row);
+ }
+ renderDelete();
+}
+function candidates(){return chats.filter(c=>!protectedChat(c));}
+function renderDelete(){const items=candidates(),ready=!!scanToken;const phrase=`删除 ${items.length} 条`;$('deleteHint').textContent=ready?`本次扫描有 ${items.length} 条候选。只会尝试删除当前侧栏能定位的聊天；删除后无法恢复。输入“${phrase}”才能执行。`:'请先点击“清缓存并重新获取”，核对真实聊天和保护规则。';const root=$('deletePreview');root.replaceChildren();if(ready)for(const c of items){const row=document.createElement('div');row.className='chat';row.textContent=c.title;row.title=c.url;root.append(row);}$('deletePhrase').placeholder=phrase;$('deleteStart').disabled=!ready||!items.length||deleting||$('deletePhrase').value.trim()!==phrase;$('deleteStop').disabled=!deleting;}
+function renderWhitelist(){
+ const entries=Object.entries(whitelist);$('whitelistCount').textContent=entries.length;
+ const root=$('whitelistList');root.replaceChildren();
+ for(const [id,chat] of entries){const row=document.createElement('div');row.className='chat';const name=document.createElement('span');name.className='name';name.textContent=chat.title||id;name.title=id;const remove=document.createElement('button');remove.textContent='移除';remove.setAttribute('aria-label',`从白名单移除 ${chat.title||id}`);remove.addEventListener('click',async()=>{delete whitelist[id];await set({whitelist});render();});row.append(name,remove);root.append(row);}
+}
+function openPanel(id){for(const panel of document.querySelectorAll('.panel'))panel.hidden=panel.id!==id;for(const tab of document.querySelectorAll('.tab')){const active=tab.dataset.panel===id;tab.classList.toggle('active',active);tab.setAttribute('aria-selected',String(active));}if(id==='projectsPanel')refreshProjectNames();}
+async function refreshProjectNames(){try{const r=await send('PROJECTS');if(!r.projects?.length)return;const known=knownProjects();for(const p of r.projects){known.set(p.id,p);protectedProjects[p.id]=p.title;}projects=[...known.values()];await set({projects,protectedProjects});render();status(`已更新 ${r.projects.length} 个项目名称。`);}catch{/* 当前标签页不是 ChatGPT 时保留上次结果 */}}
+document.querySelectorAll('.tab').forEach(tab=>tab.addEventListener('click',()=>openPanel(tab.dataset.panel)));
+const changePage=next=>{page=Math.min(Math.max(1,Math.trunc(next)),Math.max(1,Math.ceil(chats.length/pageSize)));render();$('list').scrollTop=0;};
+$('firstPage').addEventListener('click',()=>changePage(1));$('prevPage').addEventListener('click',()=>changePage(page-1));$('nextPage').addEventListener('click',()=>changePage(page+1));$('lastPage').addEventListener('click',()=>changePage(Math.ceil(chats.length/pageSize)));
+$('pageInput').addEventListener('change',()=>changePage(Number($('pageInput').value)||1));
+$('pageSize').addEventListener('change',async()=>{pageSize=Math.min(100,Math.max(1,Math.trunc(Number($('pageSize').value)||10)));page=1;await set({pageSize});render();});
+async function scan(){if(deleting||scanning)return;scanning=true;$('scan').disabled=true;scanToken=null;chats=[];projects=[];projectChats={};projectChatDetails={};protectedProjects={};page=1;$('deletePhrase').value='';try{await new Promise(resolve=>chrome.storage.local.remove(['scan','projects','scanAt','projectChats','projectChatDetails','protectedProjects'],resolve));render();status('已清理扫描缓存，正在读取当前 ChatGPT 页面的真实列表…');const r=await send('SCAN');if(r.error)throw Error(r.error);chats=r.chats;projects=r.projects||[];scanToken=r.scanToken;for(const p of projects)protectedProjects[p.id]=p.title;for(const c of chats)if(c.projectId){projectChats[c.id]=c.projectId;projectChatDetails[c.id]={projectId:c.projectId,title:c.title,url:c.url};protectedProjects[c.projectId] ||= c.projectId;}await set({projects,projectChats,projectChatDetails,protectedProjects});render();status(`重新获取完成：${chats.length} 条聊天、${knownProjects().size} 个项目。${r.truncated?'列表仍可能有更多内容。':'未加载的历史仍可能遗漏。'}`);}catch(e){status(e.message+'；请刷新 ChatGPT 页面后再试。');}finally{scanning=false;$('scan').disabled=false;}}
 $('scan').addEventListener('click',scan);
-$('frame').addEventListener('click',async()=>{try{await send('FRAME');window.close();}catch(e){status(e.message);}});
+$('deletePhrase').addEventListener('input',renderDelete);
+$('deleteStop').addEventListener('click',()=>{stopDeletion=true;$('deleteProgress').textContent='正在停止，当前聊天处理完后结束。';});
+$('deleteStart').addEventListener('click',async()=>{const items=candidates();if(!scanToken||!items.length||$('deletePhrase').value.trim()!==`删除 ${items.length} 条`)return;deleting=true;stopDeletion=false;renderDelete();let done=0,skipped=0;for(const c of items){if(stopDeletion)break;if(protectedChat(c)){skipped++;continue;}$('deleteProgress').textContent=`正在处理 ${done+skipped+1}/${items.length}：${c.title}`;try{const result=await send('DELETE_ONE',{id:c.id,scanToken});if(result.error)throw Error(result.error);chats=chats.filter(x=>x.id!==c.id);done++;render();}catch(e){skipped++;$('deleteProgress').textContent=`已跳过「${c.title}」：${e.message}`;if(!/未加载在当前侧栏|受白名单或项目规则保护/.test(e.message))break;}await new Promise(resolve=>setTimeout(resolve,600));}deleting=false;scanToken=null;$('deletePhrase').value='';render();$('deleteProgress').textContent=`处理结束：确认删除 ${done} 条，跳过 ${skipped} 条。请重新获取核对剩余聊天。`;status($('deleteProgress').textContent);});
+$('protectProject').addEventListener('click',async()=>{try{status('正在读取当前项目…');const r=await send('SCAN');if(r.error)throw Error(r.error);if(!r.project)throw Error('请先打开要保护的项目主页');protectedProjects[r.project.id]=r.project.title;delete excludedProjects[r.project.id];for(const c of r.chats)if(c.projectId===r.project.id){projectChats[c.id]=r.project.id;projectChatDetails[c.id]={projectId:r.project.id,title:c.title,url:c.url};delete projectChatOverrides[c.id];}await set({protectedProjects,excludedProjects,projectChats,projectChatDetails,projectChatOverrides});render();status(`已保护项目 ${r.project.title}；已识别 ${r.chats.filter(c=>c.projectId===r.project.id).length} 条聊天。`);}catch(e){status(e.message);}});
+chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&changes.whitelist){whitelist=changes.whitelist.newValue||{};render();}});
 $('saveWords').addEventListener('click',async()=>{keywords=$('keywords').value;await set({keywords});render();status('关键词已保存');});
 $('keywords').addEventListener('input',()=>{keywords=$('keywords').value;render();});
 $('reset').addEventListener('click',async()=>{if(!confirm('确定清空所有手动白名单？关键词不受影响。'))return;whitelist={};await set({whitelist});render();});
-$('export').addEventListener('click',()=>{const rows=[['id','标题','URL','是否保护','是否项目','保护来源'],...chats.map(c=>[c.id,c.title,c.url,protectedChat(c)?'是':'否',c.project?'是':'否',whitelist[c.id]?'手动框选/勾选':c.project?'项目':split(keywords).some(w=>c.title.toLocaleLowerCase().includes(w))?'关键词':'无'])];const csv='\uFEFF'+rows.map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='ChatGPT_聊天白名单预览.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);});
-(async()=>{const data=await get(['keywords','whitelist','scan']);keywords=data.keywords||'';whitelist=data.whitelist||{};chats=data.scan||[];$('keywords').value=keywords;render();})();
+$('export').addEventListener('click',()=>{const rows=[['id','标题','URL','是否保护','项目 ID','保护来源'],...chats.map(c=>[c.id,c.title,c.url,protectedChat(c)?'是':'否',c.projectId||projectChats[c.id]||'',whitelist[c.id]?'手动勾选/截图':projectProtected(c.projectId||projectChats[c.id],c.id)?'项目':split(keywords).some(w=>c.title.toLocaleLowerCase().includes(w))?'关键词':'无'])];const csv='\uFEFF'+rows.map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='ChatGPT_聊天白名单预览.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);});
+function applyPopupSize(width,height){width=Math.min(780,Math.max(380,Math.round(width)));height=Math.min(600,Math.max(360,Math.round(height)));document.body.style.width=`${width}px`;document.body.style.height=`${height}px`;const expanded=width>=600;document.body.classList.toggle('expanded',expanded);$('resizePopup').textContent=expanded?'还原':'放大';$('resizePopup').setAttribute('aria-pressed',String(expanded));return {width,height};}
+$('resizePopup').addEventListener('click',async()=>{const size=applyPopupSize(document.body.clientWidth>=600?430:650,document.body.clientWidth>=600?580:600);await set({popupSize:size});});
+for(const handle of document.querySelectorAll('.resizeHandle')){let drag;handle.addEventListener('pointerdown',event=>{event.preventDefault();drag={x:event.screenX,y:event.screenY,width:document.body.clientWidth,height:document.body.clientHeight};handle.setPointerCapture(event.pointerId);document.body.style.userSelect='none';});handle.addEventListener('pointermove',event=>{if(!drag)return;const direction=handle.dataset.resize;const dx=event.screenX-drag.x,dy=event.screenY-drag.y;applyPopupSize(drag.width+(direction.includes('right')?dx:direction.includes('left')?-dx:0),drag.height+(direction.includes('bottom')?dy:direction.includes('top')?-dy:0));});const finish=async()=>{if(!drag)return;drag=null;document.body.style.userSelect='';await set({popupSize:{width:document.body.clientWidth,height:document.body.clientHeight}});};handle.addEventListener('pointerup',finish);handle.addEventListener('pointercancel',finish);}
+(async()=>{const data=await get(['keywords','whitelist','excludedProjects','projectChatOverrides','projectNames','pageSize','popupSize','expanded']);keywords=data.keywords||'';whitelist=data.whitelist||{};excludedProjects=Object.fromEntries(Object.entries(data.excludedProjects||{}).map(([id,value])=>[canonicalProjectId(id),value]));projectChatOverrides=data.projectChatOverrides||{};projectNames=Object.fromEntries(Object.entries(data.projectNames||{}).map(([id,title])=>[canonicalProjectId(id),title]));pageSize=Math.min(100,Math.max(1,Math.trunc(Number(data.pageSize)||10)));if(data.popupSize)applyPopupSize(data.popupSize.width,data.popupSize.height);else if(data.expanded)applyPopupSize(650,600);$('keywords').value=keywords;await new Promise(resolve=>chrome.storage.local.remove(['scan','projects','scanAt','projectChats','projectChatDetails','protectedProjects'],resolve));render();status('旧扫描缓存已清理。请点击“清缓存并重新获取”。');})();

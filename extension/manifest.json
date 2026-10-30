@@ -1,9 +1,11 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT 聊天白名单助手",
-  "version": "0.2.0",
-  "description": "在 ChatGPT 页面框选聊天加入白名单；关键词保护、预览候选与 CSV 导出。当前不执行删除或归档。",
-  "permissions": ["storage", "activeTab"],
+  "version": "0.0.3.1",
+  "version_name": "0.0.3.20261030113",
+  "description": "扫描 ChatGPT 聊天，建立白名单，核对并逐条删除本次扫描的非白名单聊天。",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "content_security_policy": {"extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"},
   "host_permissions": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
   "content_scripts": [{"matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"], "js": ["content.js"], "run_at": "document_idle"}],
   "action": {"default_title": "ChatGPT 聊天白名单助手", "default_popup": "popup.html"}

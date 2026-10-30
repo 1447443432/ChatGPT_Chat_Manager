@@ -5,6 +5,12 @@
   const projectId = value => value?.match(/^g-p-[a-f0-9]{32}/i)?.[0] || value || null;
   const normalize = href => { try { const url=new URL(href,location.href); const m=url.pathname.match(CHAT); return m ? m[1] : null; } catch {return null;} };
   const normTitle = s => (s||'').replace(/\s+/g,' ').trim();
+  const chatTitle = anchor => {
+    const dedicated=anchor.querySelector('[data-testid*="conversation-title"],[data-testid*="title"],[data-marquee-text="true"]');
+    const explicit=dedicated?.textContent||anchor.getAttribute('title');
+    if(explicit&&normTitle(explicit))return normTitle(explicit);
+    return (anchor.innerText||anchor.textContent||'').split(/\r?\n/).map(normTitle).find(Boolean)||'';
+  };
   const deletedInTab=new Set();
   const rowFor = a => a.closest('div[data-testid*="conversation"],li,div.group,div[class*="group"],div[class*="relative"]') || a.parentElement;
   const isProject = a => /\/g\/|\/project\//i.test(new URL(a.href).pathname) || !!a.closest('[data-project-id]');
@@ -26,7 +32,7 @@
     for (const a of document.querySelectorAll('a[href]')) {
       const id = normalize(a.href);
       if (!id||deletedInTab.has(id)) continue;
-      const title = normTitle(a.getAttribute('title') || a.innerText || a.textContent || '');
+      const title = chatTitle(a);
       if (!title || title.length > 250) continue;
       const row = rowFor(a);
       const box = a.getBoundingClientRect();
@@ -203,13 +209,71 @@
     if(result?.success!==true)throw Error('ChatGPT 未明确确认删除成功；请重新获取列表核对后再操作');
     return true;
   }
+  function moveMenuCandidates(){return [...document.querySelectorAll('[role="menuitem"],[role="menu"] button,[role="menu"] [role="button"],[role="option"]')].filter(visible);}
+  function menuProjectIds(element){const values=[element.getAttribute('data-project-id'),element.closest('[data-project-id]')?.getAttribute('data-project-id'),... [...element.querySelectorAll('a[href]')].map(link=>new URL(link.href).pathname.match(/^\/g\/([^/]+)/)?.[1])];return values.filter(Boolean).map(projectId);}
+  async function locateChatLink(id){
+    let anchor=findAnchor(id);if(anchor)return anchor;
+    const containers=new Set();
+    for(const link of document.querySelectorAll('a[href]')){if(!normalize(link.href))continue;for(let el=link.parentElement;el&&el!==document.body;el=el.parentElement){if(el.scrollHeight>el.clientHeight+80&&el.clientHeight>80&&/auto|scroll/.test(getComputedStyle(el).overflowY)){containers.add(el);break;}}}
+    for(const container of containers){const original=container.scrollTop;container.scrollTop=0;await new Promise(resolve=>setTimeout(resolve,180));
+      for(let i=0;i<80;i++){anchor=findAnchor(id);if(anchor)return anchor;const before=container.scrollTop;container.scrollTop=Math.min(container.scrollHeight,container.scrollTop+Math.max(160,container.clientHeight*.8));await new Promise(resolve=>setTimeout(resolve,180));if(container.scrollTop===before)break;}
+      container.scrollTop=original;await new Promise(resolve=>setTimeout(resolve,120));
+    }
+    return findAnchor(id);
+  }
+  function rowForChatMenu(anchor,id,title){
+    const row=conversationRow(anchor,id);const box=anchor.getBoundingClientRect();
+    row.dispatchEvent(new MouseEvent('mouseover',{bubbles:true}));row.dispatchEvent(new PointerEvent('pointerover',{bubbles:true,pointerType:'mouse'}));
+    const hit=document.elementFromPoint(box.left+Math.max(2,Math.min(box.width-2,box.width*.72)),box.top+box.height/2)||anchor;
+    hit.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:box.left+box.width*.72,clientY:box.top+box.height/2,pointerType:'mouse'}));
+    hit.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:box.left+box.width*.72,clientY:box.top+box.height/2}));
+    return waitFor(()=>rowMenuButton(row,title,id),3500).catch(()=>{throw Error('未找到该聊天的选项菜单；本条未移动');});
+  }
+  async function moveOne(id,title,token,targetProjectId){
+    if(!scanSnapshot||token!==scanSnapshot.token||!scanSnapshot.items.has(id))throw Error('扫描结果已失效，请重新获取');
+    let anchor=await locateChatLink(id);if(!anchor||!visible(anchor))throw Error('聊天当前未加载在侧栏，未移动');
+    anchor.scrollIntoView({block:'center'});await new Promise(resolve=>setTimeout(resolve,120));anchor=findAnchor(id)||anchor;
+    const scanned=scanSnapshot.items.get(id),liveTitle=chatTitle(anchor);
+    if(liveTitle!==title||scanned.title!==title||projectFor(anchor)!==scanned.projectId)throw Error('聊天标题或所属项目已变化，请重新获取后再试');
+    const target=targetProjectId?getProjects().find(project=>project.id===targetProjectId):null;
+    if(targetProjectId&&!target)throw Error('目标项目不在当前页面项目列表中，请先打开项目页刷新列表');
+    if((projectFor(anchor)||null)===(targetProjectId||null))return {ok:true,id,title,projectId:targetProjectId||null,unchanged:true};
+    if([...document.querySelectorAll('[role="menu"],[role="dialog"],[role="alertdialog"]')].some(visible))throw Error('ChatGPT 页面上已有菜单或对话框，请关闭后再试');
+    nativeClick(await rowForChatMenu(anchor,id,title));
+    const action=targetProjectId?['移至项目','移动到项目','Move to project']:['从项目中移除','移出项目','Remove from project'];
+    const moveItem=await waitFor(()=>{const matches=moveMenuCandidates().filter(item=>action.includes(normTitle(item.textContent||item.getAttribute('aria-label'))));return matches.length===1?matches[0]:null;}).catch(()=>{throw Error(targetProjectId?'菜单中没有可用的“移至项目”操作':'菜单中没有“从项目中移除”操作；此聊天可能已不在项目中');});
+    nativeClick(moveItem);
+    if(targetProjectId){
+      const destinations=await waitFor(()=>{const options=moveMenuCandidates();const withId=options.filter(item=>menuProjectIds(item).includes(targetProjectId));const matches=withId.length?withId:options.filter(item=>normTitle(item.textContent||item.getAttribute('aria-label'))===normTitle(target.title));return matches.length?matches:null;}).catch(()=>{throw Error('ChatGPT 未显示目标项目选项；本条未移动');});
+      if(destinations.length!==1)throw Error('存在同名项目，无法安全确定目标；本条未移动');
+      nativeClick(destinations[0]);
+    }
+    await waitFor(()=>{const current=findAnchor(id);return current&&(projectFor(current)||null)===(targetProjectId||null);},6500).catch(()=>{throw Error('已提交项目操作，但无法从侧栏确认归属变化；请先刷新项目列表核对，勿重复批量操作');});
+    const current=findAnchor(id);if(current){const item=scanSnapshot.items.get(id);scanSnapshot.items.set(id,{...item,projectId:targetProjectId||null,project:!!targetProjectId,url:current.href});}
+    return {ok:true,id,title,projectId:targetProjectId||null};
+  }
+  async function createProject(title){
+    title=normTitle(title);if(!title||title.length>80)throw Error('项目名称需为 1 到 80 个字符');
+    const current=getProjects();if(current.some(project=>normTitle(project.title)===title))throw Error('已存在同名项目；请直接选择现有项目');
+    const launchers=[...document.querySelectorAll('button,[role="button"],a[href]')].filter(visible).filter(el=>['新建项目','New project','Create project'].includes(normTitle(el.innerText||el.textContent||el.getAttribute('aria-label'))));
+    if(launchers.length!==1)throw Error(launchers.length?'页面存在多个新建项目入口，无法安全选择':'未找到 ChatGPT 的“新建项目”入口');
+    nativeClick(launchers[0]);
+    const dialog=await waitFor(()=>[...document.querySelectorAll('[role="dialog"],[role="alertdialog"]')].find(visible),3500).catch(()=>{throw Error('ChatGPT 未打开新建项目窗口');});
+    const fields=[...dialog.querySelectorAll('input:not([type="checkbox"]),[contenteditable="true"]')].filter(visible);
+    if(fields.length!==1)throw Error('新建项目窗口中的名称输入框无法唯一确认');
+    const field=fields[0];if(field.isContentEditable){field.textContent=title;field.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:title}));}else{const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;if(!setter)throw Error('浏览器无法安全填写项目名称');setter.call(field,title);field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));}
+    const submits=[...dialog.querySelectorAll('button,[role="button"]')].filter(visible).filter(el=>['创建','新建','Create','Create project'].includes(normTitle(el.textContent||el.getAttribute('aria-label'))));
+    if(submits.length!==1)throw Error('新建项目窗口的确认按钮无法唯一确认');
+    nativeClick(submits[0]);
+    return waitFor(()=>getProjects().find(project=>project.title===title),8000).then(project=>({ok:true,project})).catch(()=>{throw Error('已提交新建项目，但暂时无法从侧栏核对；请刷新确认后再创建一次');});
+  }
   async function deleteOne(id,token,mode){
     if(!scanSnapshot||token!==scanSnapshot.token||!scanSnapshot.items.has(id))throw Error('扫描结果已失效，请重新获取');
     if(!['selected','candidates'].includes(mode))throw Error('删除范围无效，已停止');
     const data=await storageGet(['whitelist','keywords','excludedProjects','projectChats','projectChatOverrides']);
     const a=findAnchor(id);if(!a||!visible(a))throw Error('聊天未加载在当前侧栏，已跳过');
     const pid=projectFor(a)||data.projectChats?.[id];
-    const title=normTitle(a.getAttribute('title')||a.innerText||a.textContent);
+    const title=chatTitle(a);
     const scanned=scanSnapshot.items.get(id);
     if(title!==scanned.title||projectFor(a)!==scanned.projectId)throw Error('聊天标题或项目归属已变化，请重新获取');
     const words=(data.keywords||'').split(/[,，\n]/).map(s=>s.trim().toLocaleLowerCase()).filter(Boolean);
@@ -280,7 +344,7 @@
         const q=a.getBoundingClientRect();
         const intersection=Math.max(0,Math.min(r,q.right)-Math.max(l,q.left))*Math.max(0,Math.min(b,q.bottom)-Math.max(t,q.top));
         const area=q.width*q.height;
-        if(area>0&&intersection/area>=0.3){const title=normTitle(a.getAttribute('title')||a.innerText||a.textContent);if(title)picks.push({id,title,url:a.href,project:isProject(a),projectId:projectFor(a)});}
+        if(area>0&&intersection/area>=0.3){const title=chatTitle(a);if(title)picks.push({id,title,url:a.href,project:isProject(a),projectId:projectFor(a)});}
       }
       cleanup();const data=await storageGet(['whitelist']);const whitelist=data.whitelist||{};
       for(const c of picks)whitelist[c.id]={title:c.title,url:c.url,createdAt:new Date().toISOString()};
@@ -290,6 +354,8 @@
   chrome.runtime.onMessage.addListener((msg,sender,sendResponse)=>{
     if(msg.type==='SCAN'){scanAll().then(result=>{startLiveWatching();sendResponse(result);}).catch(error=>sendResponse({error:error.message}));return true;}
     if(msg.type==='PROJECTS'){sendResponse({projects:getProjects(),project:currentProject()});return;}
+    if(msg.type==='MOVE_ONE'){moveOne(msg.id,msg.title,msg.scanToken,msg.targetProjectId).then(sendResponse).catch(error=>sendResponse({error:error.message}));return true;}
+    if(msg.type==='CREATE_PROJECT'){createProject(msg.title).then(sendResponse).catch(error=>sendResponse({error:error.message}));return true;}
     if(msg.type==='DELETE_ONE'){deleteOne(msg.id,msg.scanToken,msg.mode).then(sendResponse).catch(error=>sendResponse({error:error.message}));return true;}
     if(msg.type==='FRAME'){selectRectangle();sendResponse({ok:true});return;}
     if(msg.type==='HIGHLIGHT'){

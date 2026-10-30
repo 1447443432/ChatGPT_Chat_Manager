@@ -1,7 +1,7 @@
 {
   "name": "chatgpt-chat-manager",
-  "version": "1.0.0",
+  "version": "1.0.1-dev",
   "private": true,
-  "description": "Chrome and Edge MV3 ChatGPT chat whitelist helper",
+  "description": "Chrome and Edge MV3 ChatGPT chat protection and project manager",
   "scripts": { "test": "node tests/validate.mjs" }
 }

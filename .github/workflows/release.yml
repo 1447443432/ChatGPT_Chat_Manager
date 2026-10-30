@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -16,9 +16,13 @@ jobs:
   release:
     name: Validate, package, and publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Validate version and project
         env:
@@ -32,7 +36,7 @@ jobs:
           const expected = process.argv[2];
           const manifest = JSON.parse(fs.readFileSync('extension/manifest.json', 'utf8'));
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          if (manifest.version !== expected || pkg.version !== expected) {
+          if (manifest.version !== expected || pkg.version !== `${expected}-dev`) {
             throw new Error(`Tag ${expected} does not match manifest ${manifest.version} and package ${pkg.version}`);
           }
           NODE
@@ -46,14 +50,26 @@ jobs:
           version="${RELEASE_TAG#v}"
           mkdir -p dist
           archive="dist/ChatGPT_Chat_Manager_${version}.zip"
-          (cd extension && zip -qr "../$archive" .)
+          stage="$RUNNER_TEMP/chat-manager-release"
+          mkdir -p "$stage" dist
+          cp -R extension/. "$stage/"
+          node - "$stage/manifest.json" "$version" <<'NODE'
+          const fs = require('node:fs');
+          const file = process.argv[2];
+          const version = process.argv[3];
+          const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+          manifest.version_name = version;
+          fs.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
+          find "$stage" -type f -exec touch -t 198001010000 {} +
+          (cd "$stage" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 zip -X -q "$GITHUB_WORKSPACE/$archive")
           unzip -p "$archive" manifest.json | node -e '
             let input = "";
             process.stdin.setEncoding("utf8");
             process.stdin.on("data", chunk => input += chunk);
             process.stdin.on("end", () => {
               const manifest = JSON.parse(input);
-              if (manifest.version !== process.argv[1]) process.exit(1);
+              if (manifest.version !== process.argv[1] || manifest.version_name !== process.argv[1]) process.exit(1);
             });
           ' "$version"
           (cd dist && sha256sum "$(basename "$archive")" > "$(basename "$archive").sha256")
@@ -67,7 +83,93 @@ jobs:
           version="${RELEASE_TAG#v}"
           title="ChatGPT 聊天白名单助手 v${version}"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" dist/* --clobber
+            existing_names="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')"
+            missing=()
+            missing_count=0
+            verify_dir="$RUNNER_TEMP/existing-release"
+            mkdir -p "$verify_dir"
+            for file in dist/*; do
+              name="$(basename "$file")"
+              if grep -Fxq "$name" <<< "$existing_names"; then
+                gh release download "$RELEASE_TAG" --pattern "$name" --dir "$verify_dir"
+                if ! cmp -s "$file" "$verify_dir/$name"; then
+                  echo "Refusing to replace different asset for immutable release: $name" >&2
+                  exit 1
+                fi
+              else
+                missing+=("$file")
+                missing_count=$((missing_count + 1))
+              fi
+            done
+            if ((missing_count > 0)); then
+              gh release upload "$RELEASE_TAG" "${missing[@]}"
+            fi
           else
             gh release create "$RELEASE_TAG" dist/* --title "$title" --generate-notes
           fi
+          {
+            echo "## Release $RELEASE_TAG"
+            echo
+            echo 'Assets:'
+            for file in dist/*; do echo "- $(basename "$file")"; done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  cleanup-history:
+    name: Keep only the latest successful run
+    needs: release
+    if: ${{ always() && needs.release.result == 'success' }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Delete older completed runs of this workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          workflow_id="$(gh api "repos/$REPOSITORY/actions/runs/$CURRENT_RUN_ID" --jq '.workflow_id')"
+          endpoint="repos/$REPOSITORY/actions/workflows/$workflow_id/runs?per_page=100"
+          if ! old_runs="$(gh api --paginate "$endpoint" \
+            | jq -s -r --arg current "$CURRENT_RUN_ID" '
+              [.[].workflow_runs[]
+                | select(.status == "completed")
+                | select((.id | tostring) != $current)
+              ]
+              | .[] | .id
+            ')"; then
+            echo "Could not list workflow runs; cleanup skipped." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo "Current run preserved: $CURRENT_RUN_ID"
+          if [[ -n "$old_runs" ]]; then
+            echo "Older completed runs selected for deletion:"
+            printf '%s\n' "$old_runs"
+          else
+            echo "No older completed runs to delete."
+          fi
+
+          deleted=0
+          failed=0
+          while IFS= read -r run_id; do
+            [[ -n "$run_id" ]] || continue
+            if gh api --method DELETE "repos/$REPOSITORY/actions/runs/$run_id" >/dev/null; then
+              deleted=$((deleted + 1))
+            else
+              echo "Could not delete completed run $run_id" >&2
+              failed=$((failed + 1))
+            fi
+          done <<< "$old_runs"
+
+          {
+            echo "## Workflow history cleanup"
+            echo "- Deleted older completed runs: $deleted"
+            echo "- Failed deletions: $failed"
+            echo "- Current run preserved: $CURRENT_RUN_ID"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Deleted $deleted older completed run(s); current run $CURRENT_RUN_ID was preserved."
+          ((failed == 0))

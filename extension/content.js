@@ -112,7 +112,7 @@
   const exactText=(el,values)=>values.includes(normTitle(el.textContent||el.getAttribute('aria-label')));
   const nativeClick=el=>{for(const type of ['pointerdown','mousedown','pointerup','mouseup'])el.dispatchEvent(type.startsWith('pointer')?new PointerEvent(type,{bubbles:true,pointerType:'mouse'}):new MouseEvent(type,{bubbles:true}));el.click();};
   function conversationRow(anchor,id){
-    const stable=anchor.closest('li[data-testid^="history-item-"],[data-testid^="history-item-"],[data-sidebar-item="true"]');
+    const stable=anchor.closest('li[data-testid^="history-item-"],[data-sidebar-item="true"]');
     if(stable)return stable;
     let fallback=null;
     for(let row=anchor.parentElement,depth=0;row&&row!==document.body&&depth<10;row=row.parentElement,depth++){
@@ -120,21 +120,34 @@
       if(ids.size>1)break;
       if(ids.has(id)){
         fallback=row;
-        if(row.querySelector('button[data-testid*="options"],button[aria-haspopup="menu"],button[aria-label*="options" i],button[aria-label*="选项"]'))return row;
+        if(row.matches('[data-testid^="history-item-"]')||row.querySelector('button[data-testid*="options"],button[aria-haspopup="menu"],button[aria-label*="options" i],button[aria-label*="选项"]'))return row;
       }
     }
     return fallback||anchor.parentElement;
   }
-  function rowMenuButton(row,title){
+  function rowMenuButton(row,title,id){
+    const expectedLabel=`Open conversation options for ${title}`;
+    const localizedLabel=`打开${title}的对话选项`;
     const buttons=[...row.querySelectorAll('button,[role="button"]')].filter(visible);
     const selectors=buttons.filter(button=>{
       const testid=button.getAttribute('data-testid')||'';
       const label=button.getAttribute('aria-label')||button.getAttribute('title')||'';
-      return /history-item-.*-options/i.test(testid)||/conversation options|对话选项|更多选项|more options/i.test(label)||(/options|选项|菜单/i.test(label)&&button.getAttribute('aria-haspopup')==='menu');
+      const exactId=testid===`history-item-${id}-options`;
+      const exactLabel=[expectedLabel,localizedLabel].includes(normTitle(label));
+      return exactId||exactLabel||(/history-item-.*-options/i.test(testid)&&(/conversation options|对话选项|更多选项|more options/i.test(label)||button.getAttribute('aria-haspopup')==='menu'))||(/conversation options|对话选项|更多选项|more options/i.test(label)&&button.getAttribute('aria-haspopup')==='menu');
     });
     if(selectors.length===1)return selectors[0];
     if(selectors.length>1)return null;
-    const expected=buttons.filter(button=>normTitle(button.getAttribute('aria-label')||button.getAttribute('title'))===`Open conversation options for ${title}`||normTitle(button.getAttribute('aria-label')||button.getAttribute('title'))===`打开${title}的对话选项`);
+    // Some ChatGPT layouts mount the options button next to (rather than inside) the
+    // anchor's closest row. Match the stable conversation id/title globally, then
+    // let the caller's menu/dialog checks guard the destructive action.
+    const global=[...document.querySelectorAll('button[data-testid],button[aria-label],button[title],[role="button"][data-testid],[role="button"][aria-label]')].filter(visible).filter(button=>{
+      const testid=button.getAttribute('data-testid')||'';
+      const label=normTitle(button.getAttribute('aria-label')||button.getAttribute('title'));
+      return testid===`history-item-${id}-options`||label===expectedLabel||label===localizedLabel;
+    });
+    if(global.length===1)return global[0];
+    const expected=buttons.filter(button=>normTitle(button.getAttribute('aria-label')||button.getAttribute('title'))===expectedLabel||normTitle(button.getAttribute('aria-label')||button.getAttribute('title'))===localizedLabel);
     return expected.length===1?expected[0]:null;
   }
   async function deleteOne(id,token,mode){
@@ -153,12 +166,14 @@
     const current=findAnchor(id);if(!current)throw Error('聊天滚动后未加载在当前侧栏，已跳过');
     const row=conversationRow(current,id);
     if(!row)throw Error('未找到该聊天对应的侧栏行，已跳过');
+    row.dispatchEvent(new MouseEvent('mouseover',{bubbles:true}));
     row.dispatchEvent(new MouseEvent('mouseenter',{bubbles:true}));
+    row.dispatchEvent(new PointerEvent('pointerover',{bubbles:true,pointerType:'mouse'}));
     const box=current.getBoundingClientRect(),x=box.left+Math.min(box.width-2,Math.max(2,box.width*.7)),y=box.top+box.height/2;
     const hit=document.elementFromPoint(x,y)||current;
     hit.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:x,clientY:y,pointerType:'mouse'}));
     hit.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:x,clientY:y}));
-    const menu=await waitFor(()=>rowMenuButton(row,title),1800).catch(()=>{throw Error('ChatGPT 未在该聊天行提供可定位的“更多”菜单；请确认聊天行已加载，已跳过');});
+    const menu=await waitFor(()=>rowMenuButton(row,title,id),3500).catch(()=>{throw Error('已找到聊天行，但 ChatGPT 没有提供可定位的“对话选项”按钮。本条未执行删除；请确认聊天在侧栏中可见后重试');});
     if([...document.querySelectorAll('[role="menu"],[role="dialog"],[role="alertdialog"]')].some(visible))throw Error('页面上已有菜单或对话框，请关闭后重新获取');
     nativeClick(menu);
     const choice=await waitFor(()=>{const options=[...document.querySelectorAll('[role="menuitem"], [data-radix-collection-item], [role="menu"] button')].filter(visible).filter(el=>exactText(el,['删除','Delete','删除聊天','Delete chat']));return options.length===1?options[0]:null;});

@@ -39,14 +39,17 @@ function render(){
  $('stats').textContent=`已扫描 ${chats.length} 条 · 保护 ${keep} 条 · 候选 ${chats.length-keep} 条`;
  $('count').textContent=chats.length;
  $('projectCount').textContent=knownProjects().size;
- const totalPages=Math.max(1,Math.ceil(chats.length/pageSize));page=Math.min(Math.max(1,page),totalPages);
+ const shown=filteredChats();const totalPages=Math.max(1,Math.ceil(shown.length/pageSize));page=Math.min(Math.max(1,page),totalPages);
  $('pageSize').value=pageSize;$('pageInput').value=page;$('pageInput').max=totalPages;
- $('pageSummary').textContent=`共 ${chats.length} 条 · ${chats.length?totalPages:0} 页`;
- $('pageTotal').textContent=`/ ${chats.length?totalPages:0} 页`;
+ $('pageSummary').textContent=`${shown.length===chats.length?`共 ${chats.length} 条`:`找到 ${shown.length} / ${chats.length} 条`} · ${shown.length?totalPages:0} 页`;
+ $('pageTotal').textContent=`/ ${shown.length?totalPages:0} 页`;
+ $('searchSummary').textContent=$('chatSearch').value.trim()?`${shown.length} 条`:'';
+ $('clearChatSearch').hidden=!$('chatSearch').value;
  for(const id of ['firstPage','prevPage'])$(id).disabled=page<=1;
  for(const id of ['nextPage','lastPage'])$(id).disabled=page>=totalPages;
  const root=$('list');root.replaceChildren();
- for(const c of chats.slice((page-1)*pageSize,page*pageSize)){const row=document.createElement('div');row.className='chat';
+ if(!shown.length){const empty=document.createElement('div');empty.className='emptyList';empty.textContent=chats.length?'没有匹配的聊天，试试标题关键词或 ID':'暂无内容，请先扫描或添加';root.append(empty);}
+ for(const c of shown.slice((page-1)*pageSize,page*pageSize)){const row=document.createElement('div');row.className='chat';
  const check=document.createElement('input');check.type='checkbox';check.checked=!!whitelist[c.id];check.title='手动强制保护';check.addEventListener('change',async()=>{if(check.checked){whitelist[c.id]={title:c.title,url:c.url,createdAt:new Date().toISOString()};delete deleteSelection[c.id];}else delete whitelist[c.id];await set({whitelist});render();});
  const name=document.createElement('span');name.className='name';name.textContent=c.title;name.title=c.url;
  const mark=document.createElement('span');const safe=protectedChat(c);mark.className='mark '+(safe?'protected':'candidate');mark.textContent=projectProtected(c.projectId||projectChats[c.id],c.id)?'项目保护':safe?'保留':'候选';
@@ -55,6 +58,7 @@ function render(){
  }
  renderDelete();
 }
+function filteredChats(){const terms=$('chatSearch').value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);return terms.length?chats.filter(c=>{const haystack=`${c.title} ${c.id}`.toLocaleLowerCase();return terms.every(term=>haystack.includes(term));}):chats;}
 function candidates(){return chats.filter(c=>!protectedChat(c));}
 function toggleDelete(c){if(deleteSelection[c.id])delete deleteSelection[c.id];else if(!whitelist[c.id])deleteSelection[c.id]=c.title;render();}
 function deleteItems(){return $('deleteMode').value==='selected'?chats.filter(c=>deleteSelection[c.id]===c.title&&!whitelist[c.id]):candidates();}
@@ -70,8 +74,10 @@ function renderWhitelist(){
 function openPanel(id){for(const panel of document.querySelectorAll('.panel'))panel.hidden=panel.id!==id;for(const tab of document.querySelectorAll('.tab')){const active=tab.dataset.panel===id;tab.classList.toggle('active',active);tab.setAttribute('aria-selected',String(active));}if(id==='projectsPanel')refreshProjectNames();}
 async function refreshProjectNames(){try{const r=await send('PROJECTS');if(!r.projects?.length)return;const known=knownProjects();for(const p of r.projects){known.set(p.id,p);protectedProjects[p.id]=p.title;}projects=[...known.values()];await set({projects,protectedProjects});render();status(`已更新 ${r.projects.length} 个项目名称。`);}catch{/* 当前标签页不是 ChatGPT 时保留上次结果 */}}
 document.querySelectorAll('.tab').forEach(tab=>tab.addEventListener('click',()=>openPanel(tab.dataset.panel)));
-const changePage=next=>{page=Math.min(Math.max(1,Math.trunc(next)),Math.max(1,Math.ceil(chats.length/pageSize)));render();$('list').scrollTop=0;};
-$('firstPage').addEventListener('click',()=>changePage(1));$('prevPage').addEventListener('click',()=>changePage(page-1));$('nextPage').addEventListener('click',()=>changePage(page+1));$('lastPage').addEventListener('click',()=>changePage(Math.ceil(chats.length/pageSize)));
+const changePage=next=>{page=Math.min(Math.max(1,Math.trunc(next)),Math.max(1,Math.ceil(filteredChats().length/pageSize)));render();$('list').scrollTop=0;};
+$('chatSearch').addEventListener('input',()=>{page=1;render();});
+$('clearChatSearch').addEventListener('click',()=>{$('chatSearch').value='';page=1;render();$('chatSearch').focus();});
+$('firstPage').addEventListener('click',()=>changePage(1));$('prevPage').addEventListener('click',()=>changePage(page-1));$('nextPage').addEventListener('click',()=>changePage(page+1));$('lastPage').addEventListener('click',()=>changePage(Math.ceil(filteredChats().length/pageSize)));
 $('pageInput').addEventListener('change',()=>changePage(Number($('pageInput').value)||1));
 $('pageSize').addEventListener('change',async()=>{pageSize=Math.min(100,Math.max(1,Math.trunc(Number($('pageSize').value)||10)));page=1;await set({pageSize});render();});
 async function scan(clearCache=true){if(deleting||scanning)return;scanning=true;$('scan').disabled=true;scanToken=null;chats=[];projects=[];projectChats={};projectChatDetails={};protectedProjects={};page=1;$('deleteConfirm').checked=false;try{if(clearCache)await new Promise(resolve=>chrome.storage.local.remove(['scan','projects','scanAt','projectChats','projectChatDetails','protectedProjects'],resolve));render();status('正在读取当前 ChatGPT 页面的真实聊天…');let r=await send('SCAN');for(let attempt=0;attempt<2&&!r.error&&!r.chats?.length;attempt++){status('页面聊天列表还在加载，正在重试扫描…');await new Promise(resolve=>setTimeout(resolve,900));r=await send('SCAN');}if(r.error)throw Error(r.error);chats=r.chats||[];deleteSelection=Object.fromEntries(Object.entries(deleteSelection).filter(([id,title])=>chats.some(c=>c.id===id&&c.title===title)&&!whitelist[id]));projects=r.projects||[];scanToken=r.scanToken;for(const p of projects)protectedProjects[p.id]=p.title;for(const c of chats)if(c.projectId){projectChats[c.id]=c.projectId;projectChatDetails[c.id]={projectId:c.projectId,title:c.title,url:c.url};protectedProjects[c.projectId] ||= c.projectId;}await set({projects,projectChats,projectChatDetails,protectedProjects});render();status(chats.length?`扫描完成：${chats.length} 条聊天、${knownProjects().size} 个项目。${r.truncated?'列表可能还有更多内容。':'历史记录可能仍有遗漏。'}`:'页面当前没有可识别的聊天；可稍后点“重新获取”。');}catch(e){status(e.message+'；请刷新 ChatGPT 页面后再试。');}finally{scanning=false;$('scan').disabled=false;}}

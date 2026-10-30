@@ -14,6 +14,7 @@
   <main>
     <section id="chatsPanel" class="panel">
       <div class="sectionTitle"><div><b>已扫描聊天</b><small>勾选框用于保护；右侧“待删除”仅选择指定聊天</small></div><button id="export">导出 CSV</button></div>
+      <div class="chatSearch"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.7" cy="8.7" r="5.7"></circle><path d="m13 13 4 4"></path></svg><input id="chatSearch" type="search" placeholder="搜索聊天标题或 ID" autocomplete="off" spellcheck="false" aria-label="搜索聊天标题或 ID"><span id="searchSummary" aria-live="polite"></span><button id="clearChatSearch" type="button" aria-label="清除搜索" title="清除搜索" hidden>×</button></div>
       <div id="list" class="rows"></div>
       <div class="pager"><label for="pageSize">每页</label><input id="pageSize" type="number" min="1" max="100" value="10" inputmode="numeric"><span>条</span><span id="pageSummary" class="pageSummary">共 0 页</span></div>
       <div class="pageButtons"><button id="firstPage" title="首页" aria-label="首页">«</button><button id="prevPage" title="上一页" aria-label="上一页">‹</button><label for="pageInput">第</label><input id="pageInput" type="number" min="1" value="1" inputmode="numeric" aria-label="跳转到第几页"><span id="pageTotal">/ 0 页</span><button id="nextPage" title="下一页" aria-label="下一页">›</button><button id="lastPage" title="末页" aria-label="末页">»</button></div>

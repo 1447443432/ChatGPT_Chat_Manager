@@ -108,6 +108,30 @@
     return {chats:[...chats.values()],projects:[...projects.values()],project:currentProject(),truncated,scanToken:scanSnapshot.token};
   }
   let scanSnapshot=null;
+  let liveWatchStarted=false,liveUpdateTimer=null;
+  function publishLoadedChats(){
+    if(!scanSnapshot)return;
+    const changed=[];
+    for(const chat of getChats()){
+      const previous=scanSnapshot.items.get(chat.id);
+      const merged={...previous,...chat,projectId:chat.projectId||previous?.projectId||null};
+      if(!previous||previous.title!==merged.title||previous.projectId!==merged.projectId){
+        scanSnapshot.items.set(chat.id,merged);
+        changed.push(merged);
+      }
+    }
+    if(changed.length)chrome.runtime.sendMessage({type:'LIVE_CHATS',scanToken:scanSnapshot.token,chats:changed,projects:getProjects()}).catch(()=>{});
+  }
+  function scheduleLoadedChats(){
+    if(liveUpdateTimer)clearTimeout(liveUpdateTimer);
+    liveUpdateTimer=setTimeout(()=>{liveUpdateTimer=null;publishLoadedChats();},450);
+  }
+  function startLiveWatching(){
+    if(liveWatchStarted)return;
+    liveWatchStarted=true;
+    new MutationObserver(scheduleLoadedChats).observe(document.documentElement,{childList:true,subtree:true});
+    document.addEventListener('scroll',scheduleLoadedChats,{capture:true,passive:true});
+  }
   const waitFor=(read,timeout=2500)=>new Promise((resolve,reject)=>{const end=Date.now()+timeout;const tick=()=>{const value=read();if(value)return resolve(value);if(Date.now()>end)return reject(Error('ChatGPT 页面未显示预期的操作菜单'));setTimeout(tick,80);};tick();});
   const visible=el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0;};
   const exactText=(el,values)=>values.includes(normTitle(el.textContent||el.getAttribute('aria-label')));
@@ -264,7 +288,7 @@
     });
   }
   chrome.runtime.onMessage.addListener((msg,sender,sendResponse)=>{
-    if(msg.type==='SCAN'){scanAll().then(sendResponse).catch(error=>sendResponse({error:error.message}));return true;}
+    if(msg.type==='SCAN'){scanAll().then(result=>{startLiveWatching();sendResponse(result);}).catch(error=>sendResponse({error:error.message}));return true;}
     if(msg.type==='PROJECTS'){sendResponse({projects:getProjects(),project:currentProject()});return;}
     if(msg.type==='DELETE_ONE'){deleteOne(msg.id,msg.scanToken,msg.mode).then(sendResponse).catch(error=>sendResponse({error:error.message}));return true;}
     if(msg.type==='FRAME'){selectRectangle();sendResponse({ok:true});return;}

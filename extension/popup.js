@@ -10,6 +10,14 @@ const split = s=>s.split(/[,，\n]/).map(x=>x.trim().toLocaleLowerCase()).filter
 const canonicalProjectId = id=>id?.match(/^g-p-[a-f0-9]{32}/i)?.[0]||id;
 const status = s=>$('status').textContent=s;
 $('versionLabel').textContent=`v${chrome.runtime.getManifest().version_name||chrome.runtime.getManifest().version}`;
+chrome.runtime.onMessage.addListener(msg=>{
+ if(msg.type!=='LIVE_CHATS'||!scanToken||msg.scanToken!==scanToken||scanning||deleting)return;
+ const byId=new Map(chats.map(chat=>[chat.id,chat]));let added=0,changed=false;
+ for(const chat of msg.chats||[]){const old=byId.get(chat.id);const merged={...old,...chat,projectId:chat.projectId||old?.projectId||null};if(!old)added++;if(!old||old.title!==merged.title||old.projectId!==merged.projectId){byId.set(chat.id,merged);changed=true;if(deleteSelection[chat.id]&&deleteSelection[chat.id]!==merged.title)delete deleteSelection[chat.id];if(merged.projectId){projectChats[chat.id]=merged.projectId;projectChatDetails[chat.id]={projectId:merged.projectId,title:merged.title,url:merged.url};protectedProjects[merged.projectId]||=merged.projectId;}}}
+ if(!changed)return;
+ chats=[...byId.values()];for(const project of msg.projects||[]){const index=projects.findIndex(item=>item.id===project.id);if(index<0)projects.push(project);else projects[index]=project;protectedProjects[project.id]=project.title;}
+ void set({projects,projectChats,projectChatDetails,protectedProjects});render();if(added)status(`侧栏新加载了 ${added} 条聊天，当前共 ${chats.length} 条；列表已同步。`);
+});
 async function active(){const tabs=await chrome.tabs.query({active:true,currentWindow:true});const tab=tabs[0];if(!tab||!/^https:\/\/(chatgpt\.com|chat\.openai\.com)\//.test(tab.url||''))throw Error('请先打开 chatgpt.com 网页');return tab;}
 async function send(type,arg={}){const tab=await active();try{return await chrome.tabs.sendMessage(tab.id,{type,...arg});}catch(error){if(!/Receiving end does not exist|Could not establish connection/i.test(error.message))throw error;await chrome.scripting.executeScript({target:{tabId:tab.id},files:['content.js']});return chrome.tabs.sendMessage(tab.id,{type,...arg});}}
 const projectProtected=(id,chatId)=>!!id&&(chatId&&projectChatOverrides[chatId]!==undefined?projectChatOverrides[chatId]:!excludedProjects[canonicalProjectId(id)]);

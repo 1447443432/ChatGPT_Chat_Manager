@@ -267,7 +267,7 @@
     nativeClick(submits[0]);
     return waitFor(()=>getProjects().find(project=>project.title===title),8000).then(project=>({ok:true,project})).catch(()=>{throw Error('已提交新建项目，但暂时无法从侧栏核对；请刷新确认后再创建一次');});
   }
-  async function deleteOne(id,token,mode){
+  async function deleteOne(id,token,mode,apiOnly=false,uiOnly=false){
     if(!scanSnapshot||token!==scanSnapshot.token||!scanSnapshot.items.has(id))throw Error('扫描结果已失效，请重新获取');
     if(!['selected','candidates'].includes(mode))throw Error('删除范围无效，已停止');
     const data=await storageGet(['whitelist','keywords','excludedProjects','projectChats','projectChatOverrides']);
@@ -278,7 +278,7 @@
     if(title!==scanned.title||projectFor(a)!==scanned.projectId)throw Error('聊天标题或项目归属已变化，请重新获取');
     const words=(data.keywords||'').split(/[,，\n]/).map(s=>s.trim().toLocaleLowerCase()).filter(Boolean);
     if(data.whitelist?.[id]||(mode==='candidates'&&(words.some(w=>title.toLocaleLowerCase().includes(w))||(pid&&(data.projectChatOverrides?.[id]??!data.excludedProjects?.[pid])))))throw Error('此聊天目前受白名单或项目规则保护，已跳过');
-    if(await deleteViaApi(id)){
+    if(!uiOnly&&await deleteViaApi(id)){
       deletedInTab.add(id);
       const liveAnchor=findAnchor(id);
       if(liveAnchor){
@@ -288,6 +288,7 @@
       scanSnapshot.items.delete(id);
       return {ok:true,id,title};
     }
+    if(apiOnly)return {needsUiFallback:true,id,title};
     a.scrollIntoView({block:'center'});
     await new Promise(resolve=>setTimeout(resolve,120));
     const current=findAnchor(id);if(!current)throw Error('聊天滚动后未加载在当前侧栏，已跳过');
@@ -356,7 +357,7 @@
     if(msg.type==='PROJECTS'){sendResponse({projects:getProjects(),project:currentProject()});return;}
     if(msg.type==='MOVE_ONE'){moveOne(msg.id,msg.title,msg.scanToken,msg.targetProjectId).then(sendResponse).catch(error=>sendResponse({error:error.message}));return true;}
     if(msg.type==='CREATE_PROJECT'){createProject(msg.title).then(sendResponse).catch(error=>sendResponse({error:error.message}));return true;}
-    if(msg.type==='DELETE_ONE'){deleteOne(msg.id,msg.scanToken,msg.mode).then(sendResponse).catch(error=>sendResponse({error:error.message}));return true;}
+    if(msg.type==='DELETE_ONE'){deleteOne(msg.id,msg.scanToken,msg.mode,msg.apiOnly,msg.uiOnly).then(sendResponse).catch(error=>sendResponse({error:error.message}));return true;}
     if(msg.type==='FRAME'){selectRectangle();sendResponse({ok:true});return;}
     if(msg.type==='HIGHLIGHT'){
       const a=findAnchor(msg.id);if(a){a.scrollIntoView({block:'center'});a.style.outline='2px solid #1677ff';setTimeout(()=>a.style.outline='',2000);sendResponse({ok:true});}else sendResponse({ok:false});return;

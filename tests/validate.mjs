@@ -60,7 +60,8 @@ assert(content.includes('fetch(`/backend-api/conversation/${encodeURIComponent(i
 assert(content.includes("method:'PATCH'"));
 assert(content.includes('JSON.stringify({is_visible:false})'));
 assert(content.includes('result?.success!==true'), 'deletion must require explicit server confirmation');
-assert.ok(content.indexOf('if(data.whitelist?.[id]') < content.indexOf('if(await deleteViaApi(id))'), 'whitelist checks must run before a delete request');
+assert.ok(content.indexOf('if(data.whitelist?.[id]') < content.indexOf('await deleteViaApi(id)'), 'whitelist checks must run before a delete request');
+assert(content.includes('apiOnly=false,uiOnly=false'), 'API concurrency and serialized UI fallback must be selectable');
 assert(content.includes('nativeClick(menu)'), 'keep UI deletion fallback');
 assert(!/fetch\(/.test(read('popup.js') + read('screenshot.js')), 'popup and OCR must not make network requests');
 for (const id of ['file','canvas','recognize','results','save']) {
